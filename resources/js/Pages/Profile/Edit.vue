@@ -12,43 +12,43 @@ defineProps({
     status: {
         type: String,
     },
+    charityDocuments: {
+        type: Object,
+        default: () => ({}),
+    },
 });
 </script>
 
 <template>
-    <Head title="Profile" />
+    <Head title="Cài đặt tài khoản - ShareFood" />
 
     <AuthenticatedLayout>
         <template #header>
-            <h2
-                class="text-xl font-semibold leading-tight text-gray-800"
-            >
-                Profile
+            <h2 class="text-xl font-bold text-gray-950 tracking-tight">
+                Cài đặt & Cấu hình tài khoản
             </h2>
         </template>
 
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl space-y-6 sm:px-6 lg:px-8">
-                <div
-                    class="bg-white p-4 shadow sm:rounded-lg sm:p-8"
-                >
+        <div class="py-10 bg-gray-50/50">
+            <div class="mx-auto max-w-3xl space-y-8 px-4 sm:px-6 lg:px-8">
+                <!-- Cập nhật thông tin -->
+                <div class="bg-white p-6 sm:p-8 rounded-3xl border border-gray-100 shadow-sm">
                     <UpdateProfileInformationForm
                         :must-verify-email="mustVerifyEmail"
                         :status="status"
-                        class="max-w-xl"
+                        :charity-documents="charityDocuments"
+                        class="w-full"
                     />
                 </div>
 
-                <div
-                    class="bg-white p-4 shadow sm:rounded-lg sm:p-8"
-                >
-                    <UpdatePasswordForm class="max-w-xl" />
+                <!-- Đổi mật khẩu -->
+                <div class="bg-white p-6 sm:p-8 rounded-3xl border border-gray-100 shadow-sm">
+                    <UpdatePasswordForm class="w-full" />
                 </div>
 
-                <div
-                    class="bg-white p-4 shadow sm:rounded-lg sm:p-8"
-                >
-                    <DeleteUserForm class="max-w-xl" />
+                <!-- Xóa tài khoản -->
+                <div class="bg-white p-6 sm:p-8 rounded-3xl border border-gray-100 shadow-sm">
+                    <DeleteUserForm class="w-full" />
                 </div>
             </div>
         </div>

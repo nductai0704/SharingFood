@@ -2,7 +2,7 @@
 
 namespace App\Models;
 
-// use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -12,7 +12,7 @@ use Illuminate\Notifications\Notifiable;
 
 #[Fillable(['name', 'email', 'password', 'role', 'status', 'phone', 'address', 'latitude', 'longitude'])]
 #[Hidden(['password', 'remember_token'])]
-class User extends Authenticatable
+class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable;
@@ -33,5 +33,25 @@ class User extends Authenticatable
     public function documents()
     {
         return $this->hasMany(CharityDocument::class);
+    }
+
+    public function sendEmailVerificationOTP()
+    {
+        $otp = (string) rand(100000, 999999);
+        $this->forceFill([
+            'verification_otp' => $otp,
+            'verification_otp_expires_at' => now()->addMinutes(15),
+        ])->save();
+
+        try {
+            \Illuminate\Support\Facades\Mail::to($this->email)->send(new \App\Mail\SendVerificationOTP($otp));
+        } catch (\Exception $e) {
+            logger()->error('Failed to send verification OTP to ' . $this->email . ': ' . $e->getMessage());
+        }
+    }
+
+    public function sendEmailVerificationNotification()
+    {
+        $this->sendEmailVerificationOTP();
     }
 }

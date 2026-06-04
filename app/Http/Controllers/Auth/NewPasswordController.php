@@ -3,11 +3,12 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\User;
 use Illuminate\Auth\Events\PasswordReset;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
@@ -19,12 +20,10 @@ class NewPasswordController extends Controller
     /**
      * Display the password reset view.
      */
-    public function create(Request $request): Response
+    public function create(Request $request): RedirectResponse
     {
-        return Inertia::render('Auth/ResetPassword', [
-            'email' => $request->email,
-            'token' => $request->route('token'),
-        ]);
+        // Redirect back to forgot password since we do resets inline via OTP
+        return redirect()->route('password.request');
     }
 
     /**
@@ -35,35 +34,51 @@ class NewPasswordController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
+            'email' => 'required|email|exists:users,email',
+            'otp' => 'required|string|size:6',
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
+        ], [
+            'email.required' => 'Vui lòng cung cấp email.',
+            'email.exists' => 'Email không tồn tại.',
+            'otp.required' => 'Vui lòng nhập mã OTP.',
+            'otp.size' => 'Mã OTP phải gồm 6 chữ số.',
+            'password.required' => 'Vui lòng nhập mật khẩu mới.',
+            'password.confirmed' => 'Xác nhận mật khẩu không khớp.',
+            'password.min' => 'Mật khẩu phải chứa ít nhất 8 ký tự.',
         ]);
 
-        // Here we will attempt to reset the user's password. If it is successful we
-        // will update the password on an actual user model and persist it to the
-        // database. Otherwise we will parse the error and return the response.
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user) use ($request) {
-                $user->forceFill([
-                    'password' => Hash::make($request->password),
-                    'remember_token' => Str::random(60),
-                ])->save();
+        // Find token/otp record
+        $record = DB::table('password_reset_tokens')
+            ->where('email', $request->email)
+            ->where('token', $request->otp)
+            ->first();
 
-                event(new PasswordReset($user));
-            }
-        );
-
-        // If the password was successfully reset, we will redirect the user back to
-        // the application's home authenticated view. If there is an error we can
-        // redirect them back to where they came from with their error message.
-        if ($status == Password::PASSWORD_RESET) {
-            return redirect()->route('login')->with('status', __($status));
+        if (!$record) {
+            throw ValidationException::withMessages([
+                'otp' => ['Mã OTP không chính xác hoặc đã hết hạn.'],
+            ]);
         }
 
-        throw ValidationException::withMessages([
-            'email' => [trans($status)],
-        ]);
+        // Check if OTP is expired (e.g., 10 minutes)
+        if (now()->subMinutes(10)->gt($record->created_at)) {
+            DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+            throw ValidationException::withMessages([
+                'otp' => ['Mã OTP đã hết hạn. Vui lòng gửi lại yêu cầu.'],
+            ]);
+        }
+
+        // Update password
+        $user = User::where('email', $request->email)->first();
+        $user->forceFill([
+            'password' => Hash::make($request->password),
+            'remember_token' => Str::random(60),
+        ])->save();
+
+        // Delete used token
+        DB::table('password_reset_tokens')->where('email', $request->email)->delete();
+
+        event(new PasswordReset($user));
+
+        return redirect()->route('login')->with('status', 'Mật khẩu của bạn đã được cập nhật thành công!');
     }
 }

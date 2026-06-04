@@ -34,21 +34,20 @@ const updatePassword = () => {
 </script>
 
 <template>
-    <section>
+    <section class="space-y-6">
         <header>
-            <h2 class="text-lg font-medium text-gray-900">
-                Update Password
+            <h2 class="text-lg font-bold text-gray-950">
+                Đổi mật khẩu bảo mật
             </h2>
 
-            <p class="mt-1 text-sm text-gray-600">
-                Ensure your account is using a long, random password to stay
-                secure.
+            <p class="mt-1 text-xs text-gray-500">
+                Đảm bảo tài khoản của bạn sử dụng mật khẩu ngẫu nhiên có độ dài tối thiểu 8 ký tự để bảo mật.
             </p>
         </header>
 
-        <form @submit.prevent="updatePassword" class="mt-6 space-y-6">
+        <form @submit.prevent="updatePassword" class="space-y-5">
             <div>
-                <InputLabel for="current_password" value="Current Password" />
+                <InputLabel for="current_password" value="Mật khẩu hiện tại" />
 
                 <TextInput
                     id="current_password"
@@ -57,6 +56,7 @@ const updatePassword = () => {
                     type="password"
                     class="mt-1 block w-full"
                     autocomplete="current-password"
+                    placeholder="Nhập mật khẩu hiện tại"
                 />
 
                 <InputError
@@ -66,7 +66,7 @@ const updatePassword = () => {
             </div>
 
             <div>
-                <InputLabel for="password" value="New Password" />
+                <InputLabel for="password" value="Mật khẩu mới" />
 
                 <TextInput
                     id="password"
@@ -75,6 +75,7 @@ const updatePassword = () => {
                     type="password"
                     class="mt-1 block w-full"
                     autocomplete="new-password"
+                    placeholder="Nhập mật khẩu mới (tối thiểu 8 ký tự)"
                 />
 
                 <InputError :message="form.errors.password" class="mt-2" />
@@ -83,7 +84,7 @@ const updatePassword = () => {
             <div>
                 <InputLabel
                     for="password_confirmation"
-                    value="Confirm Password"
+                    value="Xác nhận lại mật khẩu mới"
                 />
 
                 <TextInput
@@ -92,6 +93,7 @@ const updatePassword = () => {
                     type="password"
                     class="mt-1 block w-full"
                     autocomplete="new-password"
+                    placeholder="Nhập lại mật khẩu mới"
                 />
 
                 <InputError
@@ -100,8 +102,8 @@ const updatePassword = () => {
                 />
             </div>
 
-            <div class="flex items-center gap-4">
-                <PrimaryButton :disabled="form.processing">Save</PrimaryButton>
+            <div class="flex items-center gap-4 pt-2">
+                <PrimaryButton :disabled="form.processing" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs py-2.5 px-4 shadow-md shadow-emerald-100 transition">Đổi mật khẩu</PrimaryButton>
 
                 <Transition
                     enter-active-class="transition ease-in-out"
@@ -111,9 +113,9 @@ const updatePassword = () => {
                 >
                     <p
                         v-if="form.recentlySuccessful"
-                        class="text-sm text-gray-600"
+                        class="text-xs text-emerald-600 font-semibold"
                     >
-                        Saved.
+                        Đã cập nhật mật khẩu mới.
                     </p>
                 </Transition>
             </div>

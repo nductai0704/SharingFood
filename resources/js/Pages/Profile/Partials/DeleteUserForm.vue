@@ -41,37 +41,33 @@ const closeModal = () => {
 <template>
     <section class="space-y-6">
         <header>
-            <h2 class="text-lg font-medium text-gray-900">
-                Delete Account
+            <h2 class="text-lg font-bold text-gray-950">
+                Xóa tài khoản vĩnh viễn
             </h2>
 
-            <p class="mt-1 text-sm text-gray-600">
-                Once your account is deleted, all of its resources and data will
-                be permanently deleted. Before deleting your account, please
-                download any data or information that you wish to retain.
+            <p class="mt-1 text-xs text-gray-500">
+                Khi tài khoản bị xóa, toàn bộ dữ liệu, lịch sử quyên góp và các bài đăng liên quan sẽ bị xóa vĩnh viễn khỏi cơ sở dữ liệu. Hãy cân nhắc kỹ trước khi thực hiện.
             </p>
         </header>
 
-        <DangerButton @click="confirmUserDeletion">Delete Account</DangerButton>
+        <DangerButton @click="confirmUserDeletion" class="bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-xl px-4 py-2.5 shadow-md shadow-red-100 transition duration-200">
+            Yêu cầu xóa tài khoản
+        </DangerButton>
 
         <Modal :show="confirmingUserDeletion" @close="closeModal">
             <div class="p-6">
-                <h2
-                    class="text-lg font-medium text-gray-900"
-                >
-                    Are you sure you want to delete your account?
+                <h2 class="text-lg font-bold text-gray-950">
+                    Bạn có chắc chắn muốn xóa tài khoản này không?
                 </h2>
 
-                <p class="mt-1 text-sm text-gray-600">
-                    Once your account is deleted, all of its resources and data
-                    will be permanently deleted. Please enter your password to
-                    confirm you would like to permanently delete your account.
+                <p class="mt-2 text-xs text-gray-500 leading-relaxed">
+                    Hành động này không thể hoàn tác. Vui lòng nhập mật khẩu hiện tại của bạn để xác nhận yêu cầu xóa tài khoản vĩnh viễn.
                 </p>
 
-                <div class="mt-6">
+                <div class="mt-4">
                     <InputLabel
                         for="password"
-                        value="Password"
+                        value="Mật khẩu hiện tại"
                         class="sr-only"
                     />
 
@@ -81,25 +77,25 @@ const closeModal = () => {
                         v-model="form.password"
                         type="password"
                         class="mt-1 block w-3/4"
-                        placeholder="Password"
+                        placeholder="Nhập mật khẩu để xác nhận"
                         @keyup.enter="deleteUser"
                     />
 
                     <InputError :message="form.errors.password" class="mt-2" />
                 </div>
 
-                <div class="mt-6 flex justify-end">
-                    <SecondaryButton @click="closeModal">
-                        Cancel
+                <div class="mt-6 flex justify-end gap-3">
+                    <SecondaryButton @click="closeModal" class="rounded-xl text-xs font-semibold px-4 py-2">
+                        Hủy bỏ
                     </SecondaryButton>
 
                     <DangerButton
-                        class="ms-3"
+                        class="bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-semibold px-4 py-2 shadow-md shadow-red-100 transition"
                         :class="{ 'opacity-25': form.processing }"
                         :disabled="form.processing"
                         @click="deleteUser"
                     >
-                        Delete Account
+                        Xác nhận xóa
                     </DangerButton>
                 </div>
             </div>

@@ -12,6 +12,8 @@ const facilityFileName = ref('');
 const form = useForm({
     name: '',
     email: '',
+    phone: '',             // Số điện thoại
+    address: '',           // Địa chỉ chi tiết (số nhà, tên đường...)
     role: 'personal', // Mặc định chọn vai trò Cá nhân ban đầu
     latitude: null,
     longitude: null,
@@ -41,6 +43,29 @@ const handleFacilityFile = (e) => {
     if (file) {
         form.facility_image = file;
         facilityFileName.value = file.name;
+    }
+};
+
+// Tìm tọa độ GPS dựa trên địa chỉ chữ (Geocoding)
+const geocodeAddress = async () => {
+    const query = form.address;
+    if (!query || query.trim().length < 6) return;
+
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+            headers: {
+                'Accept-Language': 'vi' // Ưu tiên kết quả địa danh tiếng Việt
+            }
+        });
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+            const result = data[0];
+            form.latitude = parseFloat(parseFloat(result.lat).toFixed(6));
+            form.longitude = parseFloat(parseFloat(result.lon).toFixed(6));
+        }
+    } catch (error) {
+        console.error("Lỗi tìm kiếm tọa độ: ", error);
     }
 };
 
@@ -131,6 +156,43 @@ const submit = () => {
                         placeholder="contact@domain.com"
                     />
                     <p v-if="form.errors.email" class="text-xs text-red-500 font-medium mt-1">{{ form.errors.email }}</p>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label for="phone" class="text-xs font-semibold text-gray-700 tracking-wide">Số điện thoại</label>
+                    <input 
+                        id="phone" 
+                        type="tel" 
+                        v-model="form.phone" 
+                        required 
+                        autocomplete="tel"
+                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
+                        placeholder="09xxxxxxxx"
+                    />
+                    <p v-if="form.errors.phone" class="text-xs text-red-500 font-medium mt-1">{{ form.errors.phone }}</p>
+                </div>
+
+                <div class="space-y-1.5">
+                    <label for="address" class="text-xs font-semibold text-gray-700 tracking-wide">Địa chỉ chi tiết (Số nhà, tên đường...)</label>
+                    <input 
+                        id="address" 
+                        type="text" 
+                        v-model="form.address" 
+                        required 
+                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
+                        placeholder="Ví dụ: 123 Đường Nguyễn Trãi, Phường 2, Quận 5..."
+                    />
+                    <div class="flex justify-between items-center mt-1">
+                        <p v-if="form.errors.address" class="text-xs text-red-500 font-medium">{{ form.errors.address }}</p>
+                        <div v-else></div>
+                        <button 
+                            type="button" 
+                            @click="geocodeAddress" 
+                            class="text-[10px] text-emerald-600 hover:text-emerald-700 font-semibold focus:outline-none"
+                        >
+                            📍 Tìm tọa độ từ địa chỉ này
+                        </button>
+                    </div>
                 </div>
 
                 <div class="space-y-1.5">

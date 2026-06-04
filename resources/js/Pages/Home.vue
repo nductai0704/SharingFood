@@ -1,5 +1,8 @@
 <script setup>
+import { ref } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
+
+const isMobileMenuOpen = ref(false);
 
 // Có thể truyền props từ Controller vào đây sau này
 // const props = defineProps({
@@ -19,7 +22,8 @@ import { Head, Link } from '@inertiajs/vue3';
             <div class="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md shadow-emerald-200">S</div>
             <span class="text-xl font-bold text-gray-950 tracking-tight">ShareFood<span class="text-emerald-600">.vn</span></span>
           </div>
-          <div class="flex items-center space-x-6">
+          <!-- Desktop menu (hidden on mobile) -->
+          <div class="hidden md:flex items-center space-x-6">
             <Link href="/" class="text-emerald-600 font-medium text-sm">Trang chủ</Link>
             <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Đăng tặng phẩm</Link>
             <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Chiến dịch từ thiện</Link>
@@ -27,12 +31,12 @@ import { Head, Link } from '@inertiajs/vue3';
             
             <!-- Đã đăng nhập -->
             <div v-if="$page.props.auth.user" class="flex items-center space-x-4">
-              <div class="flex items-center space-x-2">
+              <Link :href="route('profile.edit')" class="flex items-center space-x-2 text-gray-700 hover:text-emerald-600 transition">
                 <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
                   {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
                 </div>
-                <span class="text-sm font-medium text-gray-700">{{ $page.props.auth.user.name }}</span>
-              </div>
+                <span class="text-sm font-medium">{{ $page.props.auth.user.name }}</span>
+              </Link>
               <Link :href="route('logout')" method="post" as="button" class="text-xs text-red-600 hover:text-red-700 font-semibold transition">
                 Đăng xuất
               </Link>
@@ -44,6 +48,46 @@ import { Head, Link } from '@inertiajs/vue3';
               <Link :href="route('register')" class="bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-sm px-4 py-2 rounded-xl transition shadow-sm">Đăng ký</Link>
             </div>
           </div>
+
+          <!-- Mobile menu button -->
+          <div class="flex items-center md:hidden">
+            <button @click="isMobileMenuOpen = !isMobileMenuOpen" class="text-gray-500 hover:text-emerald-600 focus:outline-none p-2 rounded-lg bg-gray-50 border border-gray-100">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path v-if="!isMobileMenuOpen" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mobile dropdown menu -->
+      <div v-if="isMobileMenuOpen" class="md:hidden bg-white border-t border-gray-100 p-4 space-y-4 shadow-inner">
+        <div class="flex flex-col space-y-3">
+          <Link href="/" class="text-emerald-600 font-medium text-sm">Trang chủ</Link>
+          <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Đăng tặng phẩm</Link>
+          <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Chiến dịch từ thiện</Link>
+        </div>
+        
+        <div class="h-px bg-gray-100"></div>
+        
+        <!-- Đã đăng nhập (Mobile) -->
+        <div v-if="$page.props.auth.user" class="flex flex-col space-y-3">
+          <Link :href="route('profile.edit')" class="flex items-center space-x-2 text-gray-700 hover:text-emerald-600 transition">
+            <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
+              {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
+            </div>
+            <span class="text-sm font-medium">{{ $page.props.auth.user.name }}</span>
+          </Link>
+          <Link :href="route('logout')" method="post" as="button" class="text-sm text-left text-red-600 hover:text-red-700 font-semibold transition">
+            Đăng xuất
+          </Link>
+        </div>
+
+        <!-- Chưa đăng nhập (Mobile) -->
+        <div v-else class="flex flex-col space-y-3 pt-1">
+          <Link :href="route('login')" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition block">Đăng nhập</Link>
+          <Link :href="route('register')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-center font-medium text-sm px-4 py-2.5 rounded-xl transition shadow-sm block">Đăng ký thành viên</Link>
         </div>
       </div>
     </nav>
@@ -54,9 +98,12 @@ import { Head, Link } from '@inertiajs/vue3';
           <h1 class="text-3xl font-extrabold tracking-tight md:text-4xl">Tìm kiếm Thực phẩm Khả dụng Lân cận</h1>
           <p class="text-emerald-100/90 leading-relaxed text-sm md:text-base">Hệ thống đang áp dụng thuật toán <code class="bg-black/20 px-1.5 py-0.5 rounded font-mono text-xs">Haversine</code> để quét các nguồn thực phẩm dư thừa và các chiến dịch quyên góp trong bán kính của bạn.</p>
           <div class="flex flex-wrap gap-3 pt-2">
-            <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-xl px-4 py-2.5 flex items-center space-x-2 text-sm">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Vị trí: Q. Bình Thạnh, TP.HCM</span>
+            <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-xl px-4 py-2.5 flex items-center space-x-2 text-sm max-w-xs md:max-w-md">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+              <span class="truncate" v-if="$page.props.auth.user" :title="$page.props.auth.user.address">
+                Vị trí: {{ $page.props.auth.user.address || 'Chưa cập nhật địa chỉ' }}
+              </span>
+              <span v-else>Vị trí: Chưa đăng nhập</span>
             </div>
             <select class="bg-white text-gray-800 rounded-xl pl-4 pr-10 py-2.5 text-sm font-medium border-0 focus:ring-2 focus:ring-emerald-400 cursor-pointer">
               <option>Bán kính: 2 km</option>
@@ -89,7 +136,7 @@ import { Head, Link } from '@inertiajs/vue3';
                     <span>Hạn dùng còn lại:</span>
                     <span class="font-bold text-amber-700">4 giờ nữa (Hết hạn 21:00)</span>
                   </div>
-                  <button class="w-full bg-emerald-600 text-white font-semibold text-sm py-2.5 px-4 rounded-xl">Gửi yêu cầu nhận (Khóa dòng)</button>
+                  <button class="w-full bg-emerald-600 text-white font-semibold text-sm py-2.5 px-4 rounded-xl">Gửi yêu cầu nhận</button>
                 </div>
               </div>
             </div>
@@ -107,7 +154,7 @@ import { Head, Link } from '@inertiajs/vue3';
                     <span>Hạn dùng còn lại:</span>
                     <span class="font-bold text-amber-700">12 giờ nữa</span>
                   </div>
-                  <button class="w-full bg-emerald-600 text-white font-semibold text-sm py-2.5 px-4 rounded-xl">Gửi yêu cầu nhận (Khóa dòng)</button>
+                  <button class="w-full bg-emerald-600 text-white font-semibold text-sm py-2.5 px-4 rounded-xl">Gửi yêu cầu nhận</button>
                 </div>
               </div>
             </div>

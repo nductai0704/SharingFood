@@ -1,46 +1,189 @@
 <script setup>
+import { ref } from 'vue';
 import { Head, Link } from '@inertiajs/vue3';
+
+const isMobileMenuOpen = ref(false);
+
+// Props từ Backend truyền qua
+// const props = defineProps({
+//     foodPosts: Array,
+//     campaigns: Array
+// });
 </script>
 
 <template>
-    <Head title="Charity Dashboard - ShareFood" />
+  <Head title="Charity Dashboard - ShareFood" />
 
-    <div class="min-h-screen bg-gray-50 text-gray-800 font-sans">
-        <nav class="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between h-16 items-center">
-                    <div class="flex items-center space-x-3">
-                        <div class="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md shadow-emerald-200">S</div>
-                        <span class="text-xl font-bold text-gray-950 tracking-tight">ShareFood<span class="text-emerald-600">.vn</span></span>
-                        <span class="bg-emerald-100 text-emerald-800 text-xs px-2 py-0.5 rounded-full font-medium">Tổ Chức Từ Thiện</span>
-                    </div>
-                    <div class="flex items-center space-x-6">
-                        <Link :href="route('logout')" method="post" as="button" class="text-sm text-gray-600 hover:text-gray-900 transition font-medium">Đăng xuất</Link>
-                    </div>
-                </div>
+  <div class="min-h-screen bg-gray-50 text-gray-800 font-sans">
+    
+    <nav class="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
+      <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-16">
+          <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md shadow-emerald-200">S</div>
+            <span class="text-xl font-bold text-gray-950 tracking-tight">ShareFood<span class="text-emerald-600">.vn</span></span>
+            <span class="hidden sm:inline-block bg-emerald-100 text-emerald-800 text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full font-bold border border-emerald-200">
+              Tổ Chức Từ Thiện
+            </span>
+          </div>
+
+          <div class="hidden md:flex items-center space-x-6">
+  <Link href="/" class="text-emerald-600 font-medium text-sm">Trang chủ</Link>
+  <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Đăng tặng phẩm</Link> 
+  <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Quản lý chiến dịch</Link>
+  <div class="h-8 w-px bg-gray-200"></div>
+  
+  <div v-if="$page.props.auth.user" class="flex items-center space-x-4">
+    <Link :href="route('profile.edit')" class="flex items-center space-x-2 text-gray-700 hover:text-emerald-600 transition">
+      <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
+        {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
+      </div>
+      <span class="text-sm font-medium">{{ $page.props.auth.user.name }}</span>
+    </Link>
+    <Link :href="route('logout')" method="post" as="button" class="text-xs text-red-600 hover:text-red-700 font-semibold transition">
+      Đăng xuất
+    </Link>
+  </div>
+</div>
+
+          <div class="flex items-center md:hidden">
+            <button @click="isMobileMenuOpen = !isMobileMenuOpen" class="text-gray-500 hover:text-emerald-600 focus:outline-none p-2 rounded-lg bg-gray-50 border border-gray-100">
+              <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path v-if="!isMobileMenuOpen" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" />
+                <path v-else stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="isMobileMenuOpen" class="md:hidden bg-white border-t border-gray-100 p-4 space-y-4 shadow-inner">
+        <div class="flex flex-col space-y-3">
+          <Link href="/" class="text-emerald-600 font-medium text-sm">Bảng điều khiển</Link>
+            
+          <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Quản lý chiến dịch</Link>
+        </div>
+        <div class="h-px bg-gray-100"></div>
+        <div v-if="$page.props.auth.user" class="flex flex-col space-y-3">
+          <Link :href="route('profile.edit')" class="flex items-center space-x-2 text-gray-700 hover:text-emerald-600 transition">
+            <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
+              {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
             </div>
-        </nav>
+            <span class="text-sm font-medium">{{ $page.props.auth.user.name }}</span>
+          </Link>
+          <Link :href="route('logout')" method="post" as="button" class="text-sm text-left text-red-600 hover:text-red-700 font-semibold transition">
+            Đăng xuất
+          </Link>
+        </div>
+      </div>
+    </nav>
 
-        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-            <div class="bg-emerald-600 p-8 rounded-3xl text-white shadow-xl shadow-emerald-100">
-                <h1 class="text-2xl font-bold">Khu Vực Tổ Chức Từ Thiện</h1>
-                <p class="text-emerald-100 mt-2">Nơi khởi tạo chiến dịch quyên góp thực phẩm lớn và quản lý các lượt phân phối.</p>
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-10">
+      
+      <div class="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-8 text-white shadow-xl shadow-emerald-100 relative overflow-hidden">
+        
+        <div class="relative z-10 max-w-2xl space-y-4">
+          <span class="bg-emerald-500/30 text-emerald-100 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">Định vị không gian GPS</span>
+          <h1 class="text-3xl font-extrabold tracking-tight md:text-4xl">Tìm kiếm Thực phẩm Lân cận</h1>
+          <p class="text-emerald-100/90 leading-relaxed text-sm md:text-base">Hệ thống đang áp dụng thuật toán <code class="bg-black/20 px-1.5 py-0.5 rounded font-mono text-xs">Haversine</code> để quét các nguồn thực phẩm dư thừa trong bán kính của Mái ấm.</p>
+          <div class="flex flex-wrap gap-3 pt-2">
+            <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-xl px-4 py-2.5 flex items-center space-x-2 text-sm max-w-xs md:max-w-md">
+              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+              <span class="truncate" v-if="$page.props.auth.user" :title="$page.props.auth.user.address">
+                Vị trí: {{ $page.props.auth.user.address || 'Chưa cập nhật địa chỉ' }}
+              </span>
+              <span v-else>Vị trí: Trụ sở Tổ chức</span>
+            </div>
+            <select class="bg-white text-gray-800 rounded-xl pl-4 pr-10 py-2.5 text-sm font-medium border-0 focus:ring-2 focus:ring-emerald-400 cursor-pointer">
+              <option>Bán kính: 2 km</option>
+              <option>Bán kính: 5 km</option>
+              <option>Bán kính: 10 km</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <div class="lg:col-span-2 space-y-6">
+          <div class="flex justify-between items-center">
+            <div class="space-y-1">
+              <h2 class="text-xl font-bold text-gray-900 tracking-tight">Thực phẩm cộng đồng chia sẻ lẻ</h2>
+              <p class="text-xs text-gray-500">Tin đăng tặng thực phẩm từ cá nhân/hộ kinh doanh nhỏ xung quanh bạn</p>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div class="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition duration-200 flex flex-col group">
+              <div class="relative bg-gray-100 h-44 overflow-hidden flex items-center justify-center text-emerald-600 text-sm font-medium">
+                [Hình ảnh bánh bao được AI phê duyệt]
+              </div>
+              <div class="p-4 flex-1 flex flex-col justify-between space-y-4">
+                <div class="space-y-1">
+                  <h3 class="font-bold text-gray-900 group-hover:text-emerald-600 transition">10 phần Bánh bao chay nóng</h3>
+                  <p class="text-xs text-gray-500 line-clamp-2">Bánh bao chuẩn bị cho sự kiện sáng nay nhưng dư ra, còn nguyên vẹn trong tủ hấp ủ ấm.</p>
+                </div>
+                <div class="space-y-3">
+                  <div class="bg-amber-50 text-amber-800 text-xs px-3 py-2 rounded-xl font-medium flex items-center justify-between">
+                    <span>Hạn dùng còn lại:</span>
+                    <span class="font-bold text-amber-700">4 giờ nữa</span>
+                  </div>
+                  <button class="w-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-semibold text-sm py-2.5 px-4 rounded-xl transition-all">Gửi yêu cầu nhận</button>
+                </div>
+              </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <!-- Campaigns block -->
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-                    <h2 class="text-lg font-bold text-gray-900">Chiến dịch của bạn</h2>
-                    <p class="text-sm text-gray-500">Các chiến dịch tiếp nhận gạo, đồ hộp, mì gói... quy mô lớn đang hoạt động.</p>
-                    <button class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm py-2 px-4 rounded-xl transition">Tạo chiến dịch mới</button>
+            <div class="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition duration-200 flex flex-col group">
+              <div class="relative bg-gray-100 h-44 overflow-hidden flex items-center justify-center text-emerald-600 text-sm font-medium">
+                [Hình ảnh bánh mì được AI phê duyệt]
+              </div>
+              <div class="p-4 flex-1 flex flex-col justify-between space-y-4">
+                <div class="space-y-1">
+                  <h3 class="font-bold text-gray-900 group-hover:text-emerald-600 transition">Bánh mì ngọt, Croissant trong ngày</h3>
+                  <p class="text-xs text-gray-500 line-clamp-2">Các loại bánh nướng trong ngày tại cửa hàng không bán hết, cam kết chất lượng sạch sẽ thơm ngon.</p>
                 </div>
-
-                <!-- History log -->
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-                    <h2 class="text-lg font-bold text-gray-900">Lịch sử tiếp nhận</h2>
-                    <p class="text-sm text-gray-500">Danh sách các cam kết đóng góp hiện vật từ nhà hảo tâm.</p>
+                <div class="space-y-3">
+                  <div class="bg-amber-50 text-amber-800 text-xs px-3 py-2 rounded-xl font-medium flex items-center justify-between">
+                    <span>Hạn dùng còn lại:</span>
+                    <span class="font-bold text-amber-700">12 giờ nữa</span>
+                  </div>
+                  <button class="w-full bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-semibold text-sm py-2.5 px-4 rounded-xl transition-all">Gửi yêu cầu nhận</button>
                 </div>
+              </div>
             </div>
-        </main>
-    </div>
+          </div>
+        </div>
+
+        <div class="space-y-6">
+          <div class="space-y-1">
+            <h2 class="text-xl font-bold text-gray-900 tracking-tight">Chiến dịch của Tổ chức</h2>
+            <p class="text-xs text-gray-500">Quản lý tiến độ quyên góp hiện vật</p>
+          </div>
+
+          <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
+            <span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-100">Đang hoạt động</span>
+            <h3 class="font-bold text-sm text-gray-900">Chiến dịch quyên góp 500kg Gạo tẻ</h3>
+            <div class="space-y-1.5">
+              <div class="flex justify-between text-xs font-semibold">
+                <span class="text-gray-500">Đã nhận thực tế:</span>
+                <span class="text-emerald-600">350kg / 500kg (70%)</span>
+              </div>
+              <div class="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                <div class="bg-emerald-500 h-full" style="width: 70%"></div>
+              </div>
+            </div>
+            <button class="w-full bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-medium text-xs py-2 rounded-xl transition">Xem danh sách đóng góp</button>
+          </div>
+
+          <div class="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center hover:bg-gray-50 transition cursor-pointer">
+              <div class="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-2 text-emerald-600">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+              </div>
+              <span class="text-sm font-semibold text-gray-500">Khởi tạo chiến dịch mới</span>
+          </div>
+
+        </div>
+      </div>
+    </main>
+  </div>
 </template>

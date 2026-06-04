@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Mail\SendResetPasswordOTP;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -19,6 +22,7 @@ class PasswordResetLinkController extends Controller
     {
         return Inertia::render('Auth/ForgotPassword', [
             'status' => session('status'),
+            'email' => session('email'),
         ]);
     }
 
@@ -30,22 +34,37 @@ class PasswordResetLinkController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $request->validate([
-            'email' => 'required|email',
+            'email' => 'required|email|exists:users,email',
+        ], [
+            'email.required' => 'Vui lòng nhập địa chỉ email.',
+            'email.email' => 'Địa chỉ email không đúng định dạng.',
+            'email.exists' => 'Email này không tồn tại trên hệ thống.',
         ]);
 
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message we
-        // need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
+        $otp = (string) rand(100000, 999999);
+
+        // Save OTP to password_reset_tokens
+        DB::table('password_reset_tokens')->updateOrInsert(
+            ['email' => $request->email],
+            [
+                'token' => $otp,
+                'created_at' => now(),
+            ]
         );
 
-        if ($status == Password::RESET_LINK_SENT) {
-            return back()->with('status', __($status));
+        // Send Email with OTP
+        try {
+            Mail::to($request->email)->send(new SendResetPasswordOTP($otp));
+        } catch (\Exception $e) {
+            // Log mail sending error
+            logger()->error('Failed to send Reset Password OTP to ' . $request->email . ': ' . $e->getMessage());
+            throw ValidationException::withMessages([
+                'email' => ['Không thể gửi email OTP lúc này. Vui lòng kiểm tra cấu hình SMTP.'],
+            ]);
         }
 
-        throw ValidationException::withMessages([
-            'email' => [trans($status)],
-        ]);
+        return back()
+            ->with('status', 'otp-sent')
+            ->with('email', $request->email);
     }
 }

@@ -47,6 +47,8 @@ class RegisteredUserController extends Controller
         $rules = [
             'name'      => 'required|string|max:255',
             'email'     => 'required|string|lowercase|email|max:255|unique:' . User::class,
+            'phone'     => 'required|string|max:20',
+            'address'   => 'required|string|max:500',
             'password'  => ['required', 'confirmed', Rules\Password::defaults()],
             'role'      => 'required|string|in:personal,charity,small_business',
             'latitude'  => 'nullable|numeric|between:-90,90',
@@ -67,6 +69,25 @@ class RegisteredUserController extends Controller
 
         // Gọi validate với thông báo lỗi tiếng Việt tùy chỉnh
         $request->validate($rules, [
+            'name.required'           => 'Vui lòng nhập Họ và tên.',
+            'name.string'             => 'Họ và tên phải là chuỗi ký tự.',
+            'name.max'                => 'Họ và tên không được vượt quá 255 ký tự.',
+            'email.required'          => 'Vui lòng nhập địa chỉ Email.',
+            'email.string'            => 'Email phải là chuỗi ký tự.',
+            'email.email'             => 'Địa chỉ Email không đúng định dạng.',
+            'email.max'               => 'Địa chỉ Email không được vượt quá 255 ký tự.',
+            'email.unique'            => 'Địa chỉ Email này đã được đăng ký sử dụng.',
+            'phone.required'          => 'Vui lòng nhập Số điện thoại.',
+            'phone.string'            => 'Số điện thoại phải là chuỗi ký tự.',
+            'phone.max'               => 'Số điện thoại không được vượt quá 20 ký tự.',
+            'address.required'        => 'Vui lòng nhập Địa chỉ chi tiết.',
+            'address.string'          => 'Địa chỉ phải là chuỗi ký tự.',
+            'address.max'             => 'Địa chỉ không được vượt quá 500 ký tự.',
+            'password.required'       => 'Vui lòng nhập Mật khẩu.',
+            'password.confirmed'      => 'Xác nhận mật khẩu không khớp.',
+            'password.min'            => 'Mật khẩu phải chứa ít nhất 8 ký tự.',
+            'role.required'           => 'Vui lòng chọn vai trò.',
+            'role.in'                 => 'Vai trò được chọn không hợp lệ.',
             'legal_license.required'  => 'Vui lòng tải lên Giấy phép hoạt động của tổ chức.',
             'legal_license.mimes'     => 'Giấy phép chỉ chấp nhận định dạng: PNG, JPG, JPEG hoặc PDF.',
             'legal_license.max'       => 'Dung lượng Giấy phép không được vượt quá 2MB.',
@@ -88,6 +109,8 @@ class RegisteredUserController extends Controller
             $user = User::create([
                 'name'      => $request->name,
                 'email'     => $request->email,
+                'phone'     => $request->phone,
+                'address'   => $request->address,
                 'password'  => Hash::make($request->password),
                 'role'      => $request->role,
                 // Cá nhân / Doanh nghiệp nhỏ -> verified (hoạt động ngay)

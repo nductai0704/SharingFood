@@ -50,6 +50,26 @@ const moderateCampaign = (campaignId, status) => {
         router.post(route('admin.campaigns.moderate', campaignId), { status });
     }
 };
+
+const getRoleLabel = (role) => {
+    const labels = {
+        admin: 'admin',
+        charity: 'Tổ chức từ thiện',
+        small_business: 'Doanh nghiệp nhỏ',
+        personal: 'Cá nhân',
+    };
+    return labels[role] || role;
+};
+
+const getStatusLabel = (status) => {
+    const labels = {
+        pending: 'Chờ duyệt',
+        verified: 'Đã duyệt',
+        rejected: 'Từ chối',
+        banned: 'Bị khóa',
+    };
+    return labels[status] || status;
+};
 </script>
 
 <template>
@@ -64,10 +84,10 @@ const moderateCampaign = (campaignId, status) => {
                         <span class="text-lg font-bold tracking-tight">ShareFood <span class="text-emerald-400">AdminPanel</span></span>
                     </div>
                     <div class="flex items-center space-x-4">
-                        <div class="flex flex-col text-right hidden sm:flex">
-                            <span class="text-sm font-semibold">Ban Quản Trị</span>
-                            <span class="text-xs text-slate-400">Điều khiển thời gian thực</span>
-                        </div>
+                        <Link :href="route('profile.edit')" class="flex flex-col text-right hidden sm:flex hover:text-emerald-400 text-left transition">
+                            <span class="text-sm font-semibold text-white">Ban Quản Trị</span>
+                            <span class="text-[10px] text-slate-400">Hồ sơ: {{ $page.props.auth.user.name }}</span>
+                        </Link>
                         <Link :href="route('logout')" method="post" as="button" class="text-xs bg-slate-800 hover:bg-red-600 px-3 py-2 rounded-xl transition duration-200">Đăng xuất</Link>
                     </div>
                 </div>
@@ -175,9 +195,10 @@ const moderateCampaign = (campaignId, status) => {
                                     <span :class="{
                                         'bg-purple-50 text-purple-700': user.role === 'charity',
                                         'bg-blue-50 text-blue-700': user.role === 'small_business',
-                                        'bg-gray-100 text-gray-700': user.role === 'personal'
+                                        'bg-gray-100 text-gray-700': user.role === 'personal',
+                                        'bg-red-50 text-red-700': user.role === 'admin'
                                     }" class="text-xs font-bold px-2.5 py-1 rounded-md">
-                                        {{ user.role }}
+                                        {{ getRoleLabel(user.role) }}
                                     </span>
                                 </td>
                                 <td class="px-6 py-4">
@@ -186,7 +207,7 @@ const moderateCampaign = (campaignId, status) => {
                                         'bg-amber-50 text-amber-700': user.status === 'pending',
                                         'bg-red-50 text-red-700': user.status === 'banned' || user.status === 'rejected'
                                     }" class="text-xs font-bold px-2.5 py-1 rounded-md">
-                                        {{ user.status }}
+                                        {{ getStatusLabel(user.status) }}
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 text-right space-x-2">

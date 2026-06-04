@@ -18,9 +18,19 @@ class ProfileController extends Controller
      */
     public function edit(Request $request): Response
     {
+        $user = $request->user();
+        $charityDocuments = [];
+        if ($user->role === 'charity') {
+            $documents = \App\Models\CharityDocument::where('user_id', $user->id)->get();
+            foreach ($documents as $doc) {
+                $charityDocuments[$doc->document_type] = asset('storage/' . $doc->file_path);
+            }
+        }
+
         return Inertia::render('Profile/Edit', [
-            'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
+            'mustVerifyEmail' => $user instanceof MustVerifyEmail,
             'status' => session('status'),
+            'charityDocuments' => $charityDocuments,
         ]);
     }
 

@@ -33,6 +33,41 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        $user = Auth::user();
+
+        // Kiểm tra trạng thái tài khoản Mái ấm đang chờ duyệt
+        if ($user->role === 'charity' && $user->status === 'pending') {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'email' => ['Tài khoản Tổ chức từ thiện của bạn đang chờ Ban quản trị phê duyệt hồ sơ pháp lý.'],
+            ]);
+        }
+
+        // Kiểm tra trạng thái tài khoản bị khóa
+        if ($user->status === 'banned') {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'email' => ['Tài khoản của bạn đã bị khóa. Vui lòng liên hệ hỗ trợ.'],
+            ]);
+        }
+
+        // Kiểm tra trạng thái tài khoản bị từ chối duyệt
+        if ($user->status === 'rejected') {
+            Auth::guard('web')->logout();
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+
+            throw \Illuminate\Validation\ValidationException::withMessages([
+                'email' => ['Tài khoản của bạn đã bị từ chối phê duyệt hồ sơ pháp lý.'],
+            ]);
+        }
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 
