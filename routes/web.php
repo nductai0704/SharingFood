@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\FoodPostController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -8,6 +9,16 @@ use Inertia\Inertia;
 Route::get('/', function () {
     return Inertia::render('Home');
 });
+
+// API Frontend: Tìm đồ ăn xung quanh
+Route::get('/api/nearby-food', [FoodPostController::class, 'getNearbyFood']);
+
+// Route quản lý và đăng tặng thực phẩm lẻ (Cả cá nhân, doanh nghiệp và mái ấm)
+Route::get('/food-posts', function () {
+    return Inertia::render('FoodPosts/Index');
+})->name('food-posts.index');
+
+
 
 // Dynamic dashboard redirector based on User Role & Status
 Route::get('/dashboard', function () {
@@ -42,6 +53,15 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
         }
         return Inertia::render('Charity/Dashboard');
     })->name('charity.dashboard');
+
+        // Trang quản lý chiến dịch quyên góp của Mái ấm
+    Route::get('/charity/campaigns', function () {
+        if (auth()->user()->status !== 'verified') {
+            return redirect()->route('charity.pending');
+        }
+        return Inertia::render('Charity/Campaigns');
+    })->name('charity.campaigns');
+
 
     // Pending charities page
     Route::get('/charity/pending', function () {
