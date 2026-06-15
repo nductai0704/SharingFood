@@ -4,6 +4,7 @@ import { Head, Link, usePage } from '@inertiajs/vue3';
 
 const isMobileMenuOpen = ref(false);
 const page = usePage();
+const activeTab = ref('food'); // Tab active: 'food' hoặc 'campaign'
 
 // Tọa độ người dùng (Mặc định ban đầu lấy Chợ Bến Thành làm tâm)
 const userLat = ref(10.7719);
@@ -284,76 +285,153 @@ watch(() => page.props.auth.user, (newUser) => {
 
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        <!-- CỘT TRÁI (2/3): Danh sách thực phẩm quét được -->
+        <!-- CỘT TRÁI (2/3): Nội dung chính phân Tab -->
         <div class="lg:col-span-2 space-y-6">
-          <div class="flex justify-between items-center">
-            <div class="space-y-1">
-              <h2 class="text-xl font-bold text-gray-900 tracking-tight">Thực phẩm cộng đồng chia sẻ lẻ</h2>
-              <p class="text-xs text-gray-500">Tin đăng tặng thực phẩm từ cá nhân/hộ kinh doanh nhỏ xung quanh Mái ấm trong vòng {{ selectedRadius }} km</p>
+          <!-- Thanh Tabs chuyển đổi -->
+          <div class="flex border border-gray-100 bg-white rounded-2xl p-1 shadow-sm">
+            <button 
+              @click="activeTab = 'food'"
+              :class="[
+                activeTab === 'food' 
+                  ? 'bg-emerald-600 text-white font-bold shadow-sm' 
+                  : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50/50'
+              ]"
+              class="flex-1 py-3 px-4 text-center rounded-xl font-semibold text-sm transition duration-200 cursor-pointer flex items-center justify-center gap-2"
+            >
+              🥗 Thực phẩm cộng đồng
+            </button>
+            <button 
+              @click="activeTab = 'campaign'"
+              :class="[
+                activeTab === 'campaign' 
+                  ? 'bg-emerald-600 text-white font-bold shadow-sm' 
+                  : 'text-gray-600 hover:text-emerald-600 hover:bg-emerald-50/50'
+              ]"
+              class="flex-1 py-3 px-4 text-center rounded-xl font-semibold text-sm transition duration-200 cursor-pointer flex items-center justify-center gap-2"
+            >
+              🎗️ Chiến dịch quyên góp
+            </button>
+          </div>
+
+          <!-- TAB 1: THỰC PHẨM CỘNG ĐỒNG -->
+          <div v-if="activeTab === 'food'" class="space-y-6">
+            <div class="flex justify-between items-center">
+              <div class="space-y-1">
+                <h2 class="text-xl font-bold text-gray-900 tracking-tight">Thực phẩm cộng đồng chia sẻ lẻ</h2>
+                <p class="text-xs text-gray-500">Tin đăng tặng thực phẩm từ cá nhân/hộ kinh doanh nhỏ xung quanh Mái ấm trong vòng {{ selectedRadius }} km</p>
+              </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div 
+                v-for="post in nearbyPosts" 
+                :key="post.id" 
+                class="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition duration-200 flex flex-col group"
+              >
+                <!-- Ảnh thực phẩm -->
+                <div class="relative bg-gray-100 h-44 overflow-hidden flex items-center justify-center text-emerald-600 text-sm font-medium">
+                  <img 
+                    :src="post.image_url ? '/storage/' + post.image_url : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'" 
+                    class="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    alt="Hình ảnh thực phẩm"
+                  />
+                </div>
+                
+                <!-- Nội dung thông tin -->
+                <div class="p-4 flex-1 flex flex-col justify-between space-y-4">
+                  <div class="space-y-1">
+                    <h3 class="font-bold text-gray-900 group-hover:text-emerald-600 transition line-clamp-1">
+                      {{ post.title }}
+                    </h3>
+                    <p class="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
+                      {{ post.description }}
+                    </p>
+                  </div>
+                  <div class="space-y-3">
+                    <!-- Thông số: Số lượng & Hạn dùng -->
+                    <div class="space-y-1.5">
+                      <div class="bg-amber-50 text-amber-800 text-[11px] px-3 py-2 rounded-xl font-medium flex items-center justify-between">
+                        <span>Số lượng còn lại:</span>
+                        <span class="font-bold text-amber-700">{{ post.remain_quantity }} / {{ post.original_quantity }} {{ post.unit }}</span>
+                      </div>
+                      <!-- Hạn dùng thức ăn -->
+                      <div class="bg-red-50 text-red-800 text-[11px] px-3 py-2 rounded-xl font-medium flex items-center justify-between">
+                        <span>Hạn dùng còn lại:</span>
+                        <span class="font-bold text-red-700">{{ getExpiryLabel(post.expires_at) }}</span>
+                      </div>
+                    </div>
+
+                    <!-- Khoảng cách Haversine -->
+                    <div class="flex items-center justify-between text-xs font-semibold text-emerald-800 px-1 pt-1">
+                      <span>🚗 Vị trí cách bạn:</span>
+                      <span class="font-bold text-emerald-600">{{ parseFloat(post.distance).toFixed(2) }} km</span>
+                    </div>
+
+                    <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm py-2.5 px-4 rounded-xl transition">
+                      Gửi yêu cầu nhận
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Trống dữ liệu -->
+              <div v-if="nearbyPosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-200 rounded-3xl p-10 text-center text-gray-400 text-sm">
+                Không tìm thấy thực phẩm nào trong bán kính {{ selectedRadius }} km xung quanh vị trí của bạn.
+              </div>
             </div>
           </div>
-          
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div 
-              v-for="post in nearbyPosts" 
-              :key="post.id" 
-              class="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition duration-200 flex flex-col group"
-            >
-              <!-- Ảnh thực phẩm -->
-              <div class="relative bg-gray-100 h-44 overflow-hidden flex items-center justify-center text-emerald-600 text-sm font-medium">
-                <img 
-                  :src="post.image_url ? '/storage/' + post.image_url : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'" 
-                  class="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  alt="Hình ảnh thực phẩm"
-                />
-              </div>
-              
-              <!-- Nội dung thông tin -->
-              <div class="p-4 flex-1 flex flex-col justify-between space-y-4">
-                <div class="space-y-1">
-                  <h3 class="font-bold text-gray-900 group-hover:text-emerald-600 transition line-clamp-1">
-                    {{ post.title }}
-                  </h3>
-                  <p class="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
-                    {{ post.description }}
-                  </p>
-                </div>
-                <div class="space-y-3">
-                  <!-- Thông số: Số lượng & Hạn dùng -->
-                  <div class="space-y-1.5">
-                    <div class="bg-amber-50 text-amber-800 text-[11px] px-3 py-2 rounded-xl font-medium flex items-center justify-between">
-                      <span>Số lượng còn lại:</span>
-                      <span class="font-bold text-amber-700">{{ post.remain_quantity }} / {{ post.original_quantity }} {{ post.unit }}</span>
-                    </div>
-                    <!-- Hạn dùng thức ăn -->
-                    <div class="bg-red-50 text-red-800 text-[11px] px-3 py-2 rounded-xl font-medium flex items-center justify-between">
-                      <span>Hạn dùng còn lại:</span>
-                      <span class="font-bold text-red-700">{{ getExpiryLabel(post.expires_at) }}</span>
-                    </div>
-                  </div>
 
-                  <!-- Khoảng cách Haversine -->
-                  <div class="flex items-center justify-between text-xs font-semibold text-emerald-800 px-1 pt-1">
-                    <span>🚗 Vị trí cách bạn:</span>
-                    <span class="font-bold text-emerald-600">{{ parseFloat(post.distance).toFixed(2) }} km</span>
-                  </div>
-
-                  <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm py-2.5 px-4 rounded-xl transition">
-                    Gửi yêu cầu nhận
-                  </button>
-                </div>
+          <!-- TAB 2: CHIẾN DỊCH CỦA TỔ CHỨC -->
+          <div v-if="activeTab === 'campaign'" class="space-y-6">
+            <div class="flex justify-between items-center">
+              <div class="space-y-1">
+                <h2 class="text-xl font-bold text-gray-900 tracking-tight">Chiến dịch của Tổ chức</h2>
+                <p class="text-xs text-gray-500">Quản lý tiến độ quyên góp hiện vật của Mái ấm</p>
               </div>
             </div>
 
-            <!-- Trống dữ liệu -->
-            <div v-if="nearbyPosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-200 rounded-3xl p-10 text-center text-gray-400 text-sm">
-              Không tìm thấy thực phẩm nào trong bán kính {{ selectedRadius }} km xung quanh vị trí của bạn.
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <!-- Thẻ chiến dịch 1 -->
+              <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between hover:shadow-md transition">
+                <div class="space-y-3">
+                  <div class="flex justify-between items-center">
+                    <span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-100">Đang hoạt động</span>
+                  </div>
+                  <h3 class="font-bold text-base text-gray-900">Chiến dịch quyên góp 500kg Gạo tẻ</h3>
+                  <p class="text-xs text-gray-500 line-clamp-3">Kêu gọi gạo tẻ cứu trợ nấu cháo và cơm trưa thiện nguyện hàng ngày cho bà con lao động nghèo.</p>
+                </div>
+                
+                <div class="space-y-3 pt-3">
+                  <div class="space-y-1.5">
+                    <div class="flex justify-between text-xs font-semibold">
+                      <span class="text-gray-500">Đã nhận thực tế:</span>
+                      <span class="text-emerald-600">350kg / 500kg (70%)</span>
+                    </div>
+                    <div class="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
+                      <div class="bg-emerald-500 h-full" style="width: 70%"></div>
+                    </div>
+                  </div>
+                  <button class="w-full bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-medium text-xs py-2 rounded-xl transition">Xem danh sách đóng góp</button>
+                </div>
+              </div>
+
+              <!-- Thẻ Khởi tạo chiến dịch mới -->
+              <Link 
+                :href="route('charity.campaigns')"
+                class="border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center hover:bg-gray-50 transition cursor-pointer flex flex-col items-center justify-center min-h-[220px]"
+              >
+                  <div class="w-12 h-12 bg-emerald-50 rounded-full flex items-center justify-center mb-3 text-emerald-600 shadow-sm">
+                      <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                  </div>
+                  <span class="text-sm font-semibold text-gray-600">Khởi tạo chiến dịch mới</span>
+                  <p class="text-xs text-gray-400 mt-1">Tạo chiến dịch nhận hỗ trợ thực phẩm quy mô lớn</p>
+              </Link>
             </div>
           </div>
         </div>
 
-        <!-- CỘT PHẢI (1/3): Bản đồ tương tác & Quản lý chiến dịch -->
-        <div class="space-y-6">
+        <!-- CỘT PHẢI (1/3): Bản đồ tương tác -->
+        <div class="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <!-- Bản đồ định vị lân cận -->
           <div class="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-3">
             <div class="flex justify-between items-center">
@@ -362,39 +440,6 @@ watch(() => page.props.auth.user, (newUser) => {
             </div>
             <!-- Box gắn Map (z-10 để không bị đè menu) -->
             <div id="map" class="h-64 rounded-2xl border border-gray-100 z-10"></div>
-          </div>
-
-          <!-- Chiến dịch của Tổ chức -->
-          <div class="space-y-4">
-            <div class="space-y-1">
-              <h2 class="text-xl font-bold text-gray-900 tracking-tight">Chiến dịch của Tổ chức</h2>
-              <p class="text-xs text-gray-500">Quản lý tiến độ quyên góp hiện vật</p>
-            </div>
-
-            <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4">
-              <span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-100">Đang hoạt động</span>
-              <h3 class="font-bold text-sm text-gray-900">Chiến dịch quyên góp 500kg Gạo tẻ</h3>
-              <div class="space-y-1.5">
-                <div class="flex justify-between text-xs font-semibold">
-                  <span class="text-gray-500">Đã nhận thực tế:</span>
-                  <span class="text-emerald-600">350kg / 500kg (70%)</span>
-                </div>
-                <div class="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                  <div class="bg-emerald-500 h-full" style="width: 70%"></div>
-                </div>
-              </div>
-              <button class="w-full bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-medium text-xs py-2 rounded-xl transition">Xem danh sách đóng góp</button>
-            </div>
-
-            <Link 
-              :href="route('charity.campaigns')"
-              class="block border-2 border-dashed border-gray-200 rounded-2xl p-6 text-center hover:bg-gray-50 transition cursor-pointer"
-            >
-                <div class="w-10 h-10 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-2 text-emerald-600">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                </div>
-                <span class="text-sm font-semibold text-gray-500">Khởi tạo chiến dịch mới</span>
-            </Link>
           </div>
         </div>
 
