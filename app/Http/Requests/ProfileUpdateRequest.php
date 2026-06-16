@@ -30,6 +30,7 @@ class ProfileUpdateRequest extends FormRequest
             'address' => ['required', 'string', 'max:500'],
             'latitude' => ['nullable', 'numeric', 'between:-90,90'],
             'longitude' => ['nullable', 'numeric', 'between:-180,180'],
+            'avatar' => ['nullable', 'image', 'max:2048'],
         ];
     }
 
@@ -48,6 +49,8 @@ class ProfileUpdateRequest extends FormRequest
             'phone.max' => 'Số điện thoại không được vượt quá 20 ký tự.',
             'address.required' => 'Vui lòng nhập Địa chỉ chi tiết.',
             'address.max' => 'Địa chỉ chi tiết không được vượt quá 500 ký tự.',
+            'avatar.image' => 'Ảnh đại diện phải là định dạng hình ảnh.',
+            'avatar.max' => 'Ảnh đại diện không được vượt quá 2MB.',
         ];
     }
 }

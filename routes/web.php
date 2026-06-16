@@ -4,6 +4,8 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\FoodPostController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\DB;
+use App\Models\FoodPost;
 use Inertia\Inertia;
 
 Route::get('/', function () {
@@ -13,10 +15,28 @@ Route::get('/', function () {
 // API Frontend: Tìm đồ ăn xung quanh
 Route::get('/api/nearby-food', [FoodPostController::class, 'getNearbyFood']);
 
-// Route quản lý và đăng tặng thực phẩm lẻ (Cả cá nhân, doanh nghiệp và mái ấm)
+// Route quản lý thực phẩm lẻ
 Route::get('/food-posts', function () {
-    return Inertia::render('FoodPosts/Index');
-})->name('food-posts.index');
+    // Tự động ẩn các tin đã quá hạn sử dụng trước khi tải dữ liệu
+    FoodPost::where('expires_at', '<', now())
+        ->where('status', 'available')
+        ->update(['status' => 'expired']);
+
+    // 1. Truy vấn danh sách categories có is_allowed = 1
+    $dbCategories = DB::table('categories')->where('is_allowed', 1)->get();
+    
+    // 2. Truy vấn danh sách food_posts của user đang đăng nhập
+    $dbFoodPosts = FoodPost::where('user_id', auth()->id())->get();
+
+    // 3. Truyền dữ liệu sang Inertia component
+    return Inertia::render('FoodPosts/Index', [
+        'dbCategories' => $dbCategories,
+        'dbFoodPosts' => $dbFoodPosts
+    ]);
+})->middleware('auth')->name('food-posts.index');
+
+Route::post('/food-posts', [FoodPostController::class, 'store'])->middleware('auth')->name('food-posts.store');
+Route::post('/food-posts/{post}/toggle-status', [FoodPostController::class, 'toggleStatus'])->middleware('auth')->name('food-posts.toggle-status');
 
 
 

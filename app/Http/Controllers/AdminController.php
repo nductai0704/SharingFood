@@ -24,6 +24,9 @@ class AdminController extends Controller
         // Lấy danh sách users và load kèm tài liệu (documents)
         $users = User::with('documents')->orderBy('created_at', 'desc')->get();
 
+        // Lấy danh sách nhật ký hệ thống kèm thông tin user thực hiện
+        $systemLogs = \App\Models\SystemLog::with('user')->orderBy('created_at', 'desc')->take(100)->get();
+
         // Danh sách giả lập cho bài đăng vi phạm và chiến dịch chờ duyệt
         $flaggedPosts = [];
         $pendingCampaigns = [];
@@ -33,6 +36,7 @@ class AdminController extends Controller
             'users' => $users,
             'flaggedPosts' => $flaggedPosts,
             'pendingCampaigns' => $pendingCampaigns,
+            'systemLogs' => $systemLogs,
         ]);
     }
 
@@ -49,6 +53,15 @@ class AdminController extends Controller
             'status' => $request->status,
         ]);
 
+        // Ghi nhật ký hệ thống
+        \App\Models\SystemLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'CHARITY_VERIFICATION',
+            'description' => "Admin đã cập nhật trạng thái xác minh của tổ chức từ thiện '{$user->name}' (ID: {$user->id}) thành: " . ($request->status === 'verified' ? 'Đã xác thực' : 'Từ chối') . ".",
+            'ip_address' => $request->ip(),
+            'created_at' => now()
+        ]);
+
         return redirect()->back()->with('success', 'Đã cập nhật trạng thái Tổ chức từ thiện thành công.');
     }
 
@@ -63,6 +76,15 @@ class AdminController extends Controller
 
         $user->update([
             'status' => $request->status,
+        ]);
+
+        // Ghi nhật ký hệ thống
+        \App\Models\SystemLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'USER_BAN_TOGGLE',
+            'description' => "Admin đã cập nhật trạng thái tài khoản '{$user->name}' (ID: {$user->id}) thành: " . ($request->status === 'banned' ? 'Đã khóa' : 'Hoạt động/Chờ duyệt') . ".",
+            'ip_address' => $request->ip(),
+            'created_at' => now()
         ]);
 
         return redirect()->back()->with('success', 'Đã cập nhật trạng thái tài khoản thành công.');

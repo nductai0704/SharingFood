@@ -22,13 +22,40 @@ defineProps({
 const user = usePage().props.auth.user;
 
 const form = useForm({
+    _method: 'PATCH', // Dùng phương thức POST với _method PATCH để hỗ trợ gửi File (Inertia)
     name: user.name,
     email: user.email,
     phone: user.phone || '',
     address: user.address || '',
     latitude: user.latitude ? parseFloat(user.latitude) : null,
     longitude: user.longitude ? parseFloat(user.longitude) : null,
+    avatar: null,
 });
+
+const avatarPreview = ref(null);
+const avatarInput = ref(null);
+
+const handleAvatarChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+        form.avatar = file;
+        avatarPreview.value = URL.createObjectURL(file);
+    }
+};
+
+const resetAvatar = () => {
+    form.avatar = null;
+    avatarPreview.value = null;
+    if (avatarInput.value) {
+        avatarInput.value.value = '';
+    }
+};
+
+const submitForm = () => {
+    form.post(route('profile.update'), {
+        forceFormData: true,
+    });
+};
 
 const mapContainer = ref(null);
 let map = null;
@@ -254,9 +281,57 @@ const getStatusLabel = (status) => {
         </header>
 
         <form
-            @submit.prevent="form.patch(route('profile.update'))"
+            @submit.prevent="submitForm"
             class="space-y-5"
         >
+            <!-- Ảnh đại diện (Avatar) -->
+            <div class="flex items-center space-x-6 bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
+                <div class="relative shrink-0">
+                    <img 
+                        v-if="avatarPreview || user.avatar" 
+                        :src="avatarPreview || user.avatar" 
+                        class="w-20 h-20 rounded-full object-cover border-2 border-emerald-500 shadow-sm"
+                        alt="Ảnh đại diện"
+                    />
+                    <div 
+                        v-else 
+                        class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center text-2xl font-bold uppercase shadow-sm"
+                    >
+                        {{ user.name.charAt(0) }}
+                    </div>
+                </div>
+
+                <div class="space-y-2">
+                    <span class="text-xs font-semibold text-gray-700 tracking-wide block">Ảnh đại diện</span>
+                    <input 
+                        id="avatar" 
+                        type="file" 
+                        ref="avatarInput"
+                        class="hidden" 
+                        accept="image/*"
+                        @change="handleAvatarChange"
+                    />
+                    <div class="flex gap-2">
+                        <button 
+                            type="button" 
+                            @click="$refs.avatarInput.click()"
+                            class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-3 rounded-lg shadow-sm transition"
+                        >
+                            Chọn ảnh mới
+                        </button>
+                        <button 
+                            v-if="form.avatar || avatarPreview"
+                            type="button" 
+                            @click="resetAvatar"
+                            class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold py-2 px-3 rounded-lg transition"
+                        >
+                            Hủy chọn
+                        </button>
+                    </div>
+                    <p class="text-[10px] text-gray-400">Hỗ trợ JPG, PNG. Dung lượng tối đa 2MB.</p>
+                    <InputError :message="form.errors.avatar" class="mt-1" />
+                </div>
+            </div>
             <!-- Thẻ thông tin hệ thống (Đọc) -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200/60 text-xs">
                 <div class="space-y-1">

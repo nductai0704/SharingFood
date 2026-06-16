@@ -8,6 +8,7 @@ const props = defineProps({
     users: Array,              // Danh sách toàn bộ người dùng và tài liệu minh chứng
     flaggedPosts: Array,       // Danh sách bài đăng bị AI gắn cờ 'flagged'
     pendingCampaigns: Array,   // Danh sách chiến dịch từ thiện chờ duyệt 'pending'
+    systemLogs: Array,         // Danh sách nhật ký hệ thống
 });
 
 // State quản lý Tab đang hiển thị tích cực
@@ -117,6 +118,13 @@ const getStatusLabel = (status) => {
                     class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
                 >
                     🛡️ Kiểm duyệt Nội dung
+                </button>
+                <button 
+                    @click="activeTab = 'logs'" 
+                    :class="activeTab === 'logs' ? 'bg-slate-900 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                    class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
+                >
+                    📜 Nhật ký Hệ thống
                 </button>
             </div>
 
@@ -284,7 +292,64 @@ const getStatusLabel = (status) => {
                         </div>
                     </div>
                 </div>
+            </div>
 
+            <!-- TAB 4: NHẬT KÝ HỆ THỐNG -->
+            <div v-if="activeTab === 'logs'" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center flex-wrap gap-2">
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-950">📜 Nhật ký hoạt động & Giám sát hệ thống</h2>
+                        <p class="text-xs text-gray-500 mt-1">Lịch sử các sự kiện kiểm duyệt tự động bằng AI, hoạt động quản trị của Admin và thay đổi tài khoản.</p>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
+                            <tr>
+                                <th class="px-6 py-4">Thời gian</th>
+                                <th class="px-6 py-4">Hành động</th>
+                                <th class="px-6 py-4">Nội dung chi tiết</th>
+                                <th class="px-6 py-4">Người thực hiện / Đối tượng</th>
+                                <th class="px-6 py-4">Địa chỉ IP</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr v-for="log in systemLogs" :key="log.id" class="hover:bg-gray-50/70 transition">
+                                <td class="px-6 py-4 text-xs font-medium text-gray-500 whitespace-nowrap">
+                                    {{ new Date(log.created_at).toLocaleString('vi-VN') }}
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span :class="{
+                                        'bg-emerald-50 text-emerald-700 border-emerald-100': log.action === 'AI_MODERATION' && log.description.includes('approved'),
+                                        'bg-red-50 text-red-700 border-red-100': log.action === 'AI_MODERATION' && log.description.includes('flagged'),
+                                        'bg-purple-50 text-purple-700 border-purple-100': log.action === 'CHARITY_VERIFICATION',
+                                        'bg-amber-50 text-amber-700 border-amber-100': log.action === 'USER_BAN_TOGGLE',
+                                    }" class="text-[10px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap">
+                                        {{ log.action }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-gray-700 leading-relaxed text-xs">
+                                    {{ log.description }}
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="text-xs text-gray-900 font-semibold" v-if="log.user">
+                                        {{ log.user.name }} 
+                                        <span class="text-[10px] text-gray-400 font-normal">({{ log.user.email }})</span>
+                                    </div>
+                                    <div class="text-xs text-gray-400 italic" v-else>Hệ thống tự động</div>
+                                </td>
+                                <td class="px-6 py-4 text-xs font-mono text-gray-400">
+                                    {{ log.ip_address }}
+                                </td>
+                            </tr>
+                            <tr v-if="!systemLogs || systemLogs.length === 0">
+                                <td colspan="5" class="text-center py-8 text-sm text-gray-400 italic">
+                                    Chưa có nhật ký hoạt động nào được ghi lại.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </main>
 

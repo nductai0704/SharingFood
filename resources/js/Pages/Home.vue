@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
 import { Head, Link, usePage } from '@inertiajs/vue3';
 
 const isMobileMenuOpen = ref(false);
@@ -12,6 +12,15 @@ const userLng = ref(106.6983);
 const userAddress = ref('Đang xác định GPS...');
 const selectedRadius = ref(5); // Bán kính quét mặc định: 5 km
 const nearbyPosts = ref([]);
+
+const currentTime = ref(new Date());
+let timeTicker = null;
+
+const activeNearbyPosts = computed(() => {
+    return nearbyPosts.value.filter(post => {
+        return post.status === 'available' && new Date(post.expires_at) > currentTime.value;
+    });
+});
 
 // Khai báo biến giữ các thực thể Leaflet Map
 let map = null;
@@ -127,7 +136,7 @@ const updateMarkersOnMap = () => {
         shadowSize: [41, 41]
     });
 
-    nearbyPosts.value.forEach(post => {
+    activeNearbyPosts.value.forEach(post => {
         L.marker([post.latitude, post.longitude], { icon: greenIcon })
             .addTo(markersGroup)
             .bindPopup(`
@@ -159,9 +168,39 @@ const getExpiryLabel = (expiresAtStr) => {
     return `Còn ${diffDays} ngày`;
 };
 
+// Hàm tính thời gian đăng bài thân thiện
+const getCreatedTimeLabel = (createdAtStr) => {
+    const createdAt = new Date(createdAtStr);
+    const now = new Date();
+    const diffMs = now - createdAt;
+    if (diffMs <= 0) return 'Vừa xong';
+    
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    if (diffMins < 60) {
+        return diffMins === 0 ? 'Vừa xong' : `${diffMins} phút trước`;
+    }
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) {
+        return `${diffHours} giờ trước`;
+    }
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} ngày trước`;
+};
+
 onMounted(() => {
     getUserLocation();
+    timeTicker = setInterval(() => {
+        currentTime.value = new Date();
+    }, 10000); // 10 giây cập nhật 1 lần
 });
+
+onUnmounted(() => {
+    if (timeTicker) clearInterval(timeTicker);
+});
+
+watch(activeNearbyPosts, () => {
+    updateMarkersOnMap();
+}, { deep: true });
 
 // Lắng nghe thay đổi của biến Bán kính để tự động quét lại dữ liệu
 watch(selectedRadius, () => {
@@ -210,7 +249,13 @@ watch(() => page.props.auth.user, (newUser) => {
             <!-- Đã đăng nhập -->
             <div v-if="$page.props.auth.user" class="flex items-center space-x-4">
               <Link :href="route('profile.edit')" class="flex items-center space-x-2 text-gray-700 hover:text-emerald-600 transition">
-                <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
+                <img 
+                  v-if="$page.props.auth.user.avatar" 
+                  :src="$page.props.auth.user.avatar" 
+                  class="w-8 h-8 rounded-full object-cover border border-emerald-100 shadow-sm"
+                  alt="Avatar"
+                />
+                <div v-else class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
                   {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
                 </div>
                 <span class="text-sm font-medium">{{ $page.props.auth.user.name }}</span>
@@ -252,7 +297,13 @@ watch(() => page.props.auth.user, (newUser) => {
         <!-- Đã đăng nhập (Mobile) -->
         <div v-if="$page.props.auth.user" class="flex flex-col space-y-3">
           <Link :href="route('profile.edit')" class="flex items-center space-x-2 text-gray-700 hover:text-emerald-600 transition">
-            <div class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
+            <img 
+              v-if="$page.props.auth.user.avatar" 
+              :src="$page.props.auth.user.avatar" 
+              class="w-8 h-8 rounded-full object-cover border border-emerald-100 shadow-sm"
+              alt="Avatar"
+            />
+            <div v-else class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
               {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
             </div>
             <span class="text-sm font-medium">{{ $page.props.auth.user.name }}</span>
@@ -339,50 +390,75 @@ watch(() => page.props.auth.user, (newUser) => {
             <!-- Grid thẻ thực phẩm -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
               <div 
-                v-for="post in nearbyPosts" 
+                v-for="post in activeNearbyPosts" 
                 :key="post.id" 
-                class="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition duration-200 flex flex-col group"
+                class="bg-white border border-gray-100/80 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col group"
               >
+                <!-- Header: Người đăng & Khoảng cách (Bố cục chuyên nghiệp như mạng xã hội) -->
+                <div class="p-3.5 flex items-center justify-between border-b border-gray-50">
+                  <div class="flex items-center space-x-2.5 min-w-0">
+                    <!-- Avatar tròn -->
+                    <img 
+                      v-if="post.user && post.user.avatar" 
+                      :src="post.user.avatar" 
+                      class="w-9 h-9 rounded-full object-cover border border-emerald-100 shadow-sm"
+                      alt="Avatar"
+                    />
+                    <!-- Avatar Gradient bắt mắt làm Fallback -->
+                    <div v-else class="w-9 h-9 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center text-xs font-bold uppercase shadow-sm">
+                      {{ post.user ? post.user.name.charAt(0) : 'U' }}
+                    </div>
+                    <div class="min-w-0">
+                      <p class="text-[13px] font-bold text-gray-800 truncate leading-none">
+                        {{ post.user ? post.user.name : 'Người dùng' }}
+                      </p>
+                      <p class="text-[10px] text-gray-400 mt-1 leading-none">
+                        {{ getCreatedTimeLabel(post.created_at) }}
+                      </p>
+                    </div>
+                  </div>
+                  <!-- Khoảng cách nhỏ gọn -->
+                  <div class="px-2 py-0.5 bg-emerald-50 border border-emerald-100 text-emerald-700 rounded-full text-[9px] font-bold flex items-center gap-1 shrink-0">
+                    📍 {{ parseFloat(post.distance).toFixed(1) }} km
+                  </div>
+                </div>
+
                 <!-- Ảnh thực phẩm -->
                 <div class="relative bg-gray-100 h-44 overflow-hidden flex items-center justify-center text-emerald-600 text-sm font-medium">
                   <img 
-                    :src="post.image_url ? '/storage/' + post.image_url : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'" 
-                    class="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    :src="post.image_url ? (post.image_url.startsWith('/storage') ? post.image_url : '/storage/' + post.image_url) : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'" 
+                    class="w-full h-full object-cover group-hover:scale-105 transition-all duration-500"
                     alt="Hình ảnh thực phẩm"
                   />
                 </div>
                 
                 <!-- Nội dung thông tin -->
                 <div class="p-4 flex-1 flex flex-col justify-between space-y-4">
-                  <div class="space-y-1">
-                    <h3 class="font-bold text-gray-900 group-hover:text-emerald-600 transition line-clamp-1">
+                  <div class="space-y-1.5">
+                    <h3 class="font-bold text-sm text-gray-900 group-hover:text-emerald-600 transition-colors duration-150 line-clamp-1">
                       {{ post.title }}
                     </h3>
-                    <p class="text-xs text-gray-500 line-clamp-2 min-h-[2rem]">
+                    <p class="text-[11px] text-gray-500 leading-relaxed line-clamp-2 min-h-[2rem]">
                       {{ post.description }}
                     </p>
                   </div>
+
                   <div class="space-y-3">
-                    <!-- Thông số: Số lượng & Hạn dùng -->
-                    <div class="space-y-1.5">
-                      <div class="bg-amber-50 text-amber-800 text-[11px] px-3 py-2 rounded-xl font-medium flex items-center justify-between">
-                        <span>Số lượng còn lại:</span>
-                        <span class="font-bold text-amber-700">{{ post.remain_quantity }} / {{ post.original_quantity }} {{ post.unit }}</span>
+                    <!-- Thông số: Số lượng & Hạn dùng chia làm 2 ô đối xứng -->
+                    <div class="grid grid-cols-2 gap-2">
+                      <div class="bg-amber-50/60 border border-amber-100/60 p-2 rounded-xl text-center flex flex-col justify-center">
+                        <span class="text-[9px] text-amber-700 font-semibold uppercase tracking-wider">Còn lại</span>
+                        <span class="font-bold text-[11px] text-amber-800 mt-0.5">{{ post.remain_quantity }}/{{ post.original_quantity }} {{ post.unit }}</span>
                       </div>
-                      <!-- Thời hạn thức ăn -->
-                      <div class="bg-red-50 text-red-800 text-[11px] px-3 py-2 rounded-xl font-medium flex items-center justify-between">
-                        <span>Hạn dùng còn lại:</span>
-                        <span class="font-bold text-red-700">{{ getExpiryLabel(post.expires_at) }}</span>
+                      
+                      <div class="bg-red-50/60 border border-red-100/60 p-2 rounded-xl text-center flex flex-col justify-center">
+                        <span class="text-[9px] text-red-700 font-semibold uppercase tracking-wider">Hạn dùng</span>
+                        <span class="font-bold text-[11px] text-red-800 mt-0.5">{{ getExpiryLabel(post.expires_at) }}</span>
                       </div>
                     </div>
 
-                    <!-- Khoảng cách Haversine -->
-                    <div class="flex items-center justify-between text-xs font-semibold text-emerald-800 px-1 pt-1">
-                      <span>🚗 Vị trí cách bạn:</span>
-                      <span class="font-bold text-emerald-600">{{ parseFloat(post.distance).toFixed(2) }} km</span>
-                    </div>
-
-                    <button class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm py-2.5 px-4 rounded-xl transition">
+                    <!-- Button gửi yêu cầu nhận (Gradient Premium) -->
+                    <button class="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shadow-emerald-100 hover:shadow-emerald-200 hover:-translate-y-[1px] active:translate-y-0 transition-all duration-150">
                       Gửi yêu cầu nhận
                     </button>
                   </div>
@@ -390,7 +466,7 @@ watch(() => page.props.auth.user, (newUser) => {
               </div>
 
               <!-- Trống dữ liệu -->
-              <div v-if="nearbyPosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-200 rounded-3xl p-10 text-center text-gray-400 text-sm">
+              <div v-if="activeNearbyPosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-200 rounded-3xl p-10 text-center text-gray-400 text-sm">
                 Không tìm thấy thực phẩm nào trong bán kính {{ selectedRadius }} km xung quanh vị trí của bạn.
               </div>
             </div>

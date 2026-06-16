@@ -1,100 +1,123 @@
 <script setup>
-import { ref, reactive } from 'vue';
-import { Head, Link } from '@inertiajs/vue3';
+import { ref, watch, onUnmounted, computed, onMounted } from 'vue';
+import { Head, Link, useForm, router } from '@inertiajs/vue3';
 
-// 1. Trạng thái kiểm soát đóng/mở Modal tạo mới bài đăng
+// 1. Nhận props từ controller
+const props = defineProps({
+    dbCategories: Array,
+    dbFoodPosts: Array
+});
+
 const isCreateModalOpen = ref(false);
+const foodPosts = ref(props.dbFoodPosts);
+const categories = ref(props.dbCategories);
 
-// 2. Mảng Mock Data chứa các bài đăng tặng thực phẩm hiện có của tài khoản này
-const foodPosts = ref([
-    {
-        id: 1,
-        title: '10 phần bánh bao chay nóng hổi',
-        category_id: 2, // Bánh ngọt/chay
-        original_quantity: 10,
-        remain_quantity: 10,
-        unit: 'phần',
-        expires_at: '2026-06-12T18:00',
-        status: 'active', // active (Đang hiển thị), expired (Hết hạn)
-        ai_status: 'verified', // verified (Đã duyệt), pending (Đang duyệt), rejected (Từ chối)
-        description: 'Bánh bao chay mới hấp sáng nay phục vụ sự kiện nhưng còn dư.'
-    },
-    {
-        id: 2,
-        title: '10 phần cơm chay nóng hổi',
-        category_id: 3, // Bánh ngọt/chay
-        original_quantity: 10,
-        remain_quantity: 10,
-        unit: 'phần',
-        expires_at: '2026-06-12T18:00',
-        status: 'active', // active (Đang hiển thị), expired (Hết hạn)
-        ai_status: 'verified', // verified (Đã duyệt), pending (Đang duyệt), rejected (Từ chối)
-        description: 'Bánh bao chay mới hấp sáng nay phục vụ sự kiện nhưng còn dư.'
-    },
-    // Bạn hãy điền thêm ít nhất 1 bài đăng thực phẩm giả lập nữa vào đây để danh sách thêm sinh động...
-]);
+const activeManageTab = ref('active'); // 'active' hoặc 'inactive'
 
-// 3. Mảng Mock danh mục (sử dụng lại từ phần trước)
-const categories = ref([
-    { id: 1, name: 'Cơm suất' },
-    { id: 2, name: 'Bánh ngọt' },
-    { id: 3, name: 'Trái cây' },
-    { id: 4, name: 'Thực phẩm đóng hộp' },
-]);
+const currentTime = ref(new Date());
+let timeTicker = null;
 
-// 4. Khai báo biến reactive cho dữ liệu Form tạo mới bài đăng
-const form = reactive({
+onMounted(() => {
+    timeTicker = setInterval(() => {
+        currentTime.value = new Date();
+    }, 10000); // cập nhật mỗi 10 giây
+});
+
+const activePosts = computed(() => {
+    return foodPosts.value.filter(post => {
+        return post.status === 'available' && new Date(post.expires_at) > currentTime.value;
+    });
+});
+
+const inactivePosts = computed(() => {
+    return foodPosts.value.filter(post => {
+        return post.status !== 'available' || new Date(post.expires_at) <= currentTime.value;
+    });
+});
+
+const handleToggleStatus = (postId) => {
+    router.post(route('food-posts.toggle-status', postId), {}, {
+        preserveScroll: true
+    });
+};
+
+// Polling tự động làm mới danh sách khi có tin đăng đang chờ AI kiểm duyệt ngầm
+let pollInterval = null;
+
+const startPolling = () => {
+    if (pollInterval) return;
+    pollInterval = setInterval(() => {
+        const hasUnchecked = foodPosts.value.some(post => post.ai_status === 'unchecked');
+        if (hasUnchecked) {
+            router.reload({ 
+                only: ['dbFoodPosts'],
+                onSuccess: () => {
+                    const stillHasUnchecked = foodPosts.value.some(post => post.ai_status === 'unchecked');
+                    if (!stillHasUnchecked) {
+                        stopPolling();
+                    }
+                }
+            });
+        } else {
+            stopPolling();
+        }
+    }, 3000); // 3 giây quét 1 lần
+};
+
+const stopPolling = () => {
+    if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+    }
+};
+
+// Tự động đồng bộ danh sách bài đăng khi Backend gửi Props mới về
+watch(() => props.dbFoodPosts, (newPosts) => {
+    foodPosts.value = newPosts;
+    const hasUnchecked = newPosts.some(post => post.ai_status === 'unchecked');
+    if (hasUnchecked) {
+        startPolling();
+    } else {
+        stopPolling();
+    }
+}, { immediate: true });
+
+onUnmounted(() => {
+    stopPolling();
+    if (timeTicker) clearInterval(timeTicker);
+});
+
+// 2. Khai báo form bằng useForm của Inertia
+const form = useForm({
     title: '',
     category_id: '',
     description: '',
     original_quantity: '',
-    remain_quantity: '',
     unit: '',
-    image_url: '',
+    image: null, // Lưu trữ File object thực tế để upload ảnh
     expires_at: '',
 });
-
 // Hàm hỗ trợ tìm tên danh mục từ ID
 const getCategoryName = (catId) => {
     const category = categories.value.find(c => c.id === Number(catId));
     return category ? category.name : 'Chưa phân loại';
 };
 
+
+// 3. Hàm xử lý gửi form lên Backend
+// 3. Hàm xử lý gửi form lên Backend
 const handleSubmit = () => {
-    // 1. Tạo bài đăng mới từ dữ liệu form
-    const newPost = {
-        id: foodPosts.value.length + 1,
-        title: form.title,
-        category_id: form.category_id,
-        original_quantity: form.original_quantity,
-        remain_quantity: form.original_quantity, // Khởi đầu lượng còn lại = ban đầu
-        unit: form.unit,
-        expires_at: form.expires_at,
-        status: 'active',
-        ai_status: 'pending', // Mặc định chờ AI quét duyệt
-        description: form.description,
-        image_url: form.image_url
-    };
-
-    // 2. Thêm vào danh sách foodPosts
-    foodPosts.value.push(newPost);
-
-    // 3. Reset dữ liệu form về trống
-    form.title = '';
-    form.category_id = '';
-    form.description = '';
-    form.original_quantity = '';
-    form.remain_quantity = '';
-    form.unit = '';
-    form.image_url = '';
-    form.expires_at = '';
-
-    // 4. Đóng Modal
-    isCreateModalOpen.value = false;
-
-    // 5. Thông báo cho người dùng
-    alert("Đăng tặng thực phẩm thành công! Bài viết mới của bạn đang được AI kiểm duyệt và đã xuất hiện trong danh sách quản lý.");
+    form.post(route('food-posts.store'), {
+        forceFormData: true, // Bắt buộc gửi dạng FormData để upload file ảnh
+        onSuccess: () => {
+            // Khi đăng thành công: reset form và đóng modal
+            form.reset();
+            isCreateModalOpen.value = false;
+        },
+    });
 };
+
+
 
 </script>
 
@@ -127,10 +150,48 @@ const handleSubmit = () => {
         </div>
       </div>
 
-            <!-- Danh sách bài đăng dạng lưới thẻ (Grid Cards) -->
+      <!-- Bộ chọn Tab Quản lý Thực phẩm -->
+      <div class="flex border-b border-gray-100 pb-px gap-6">
+        <button 
+          @click="activeManageTab = 'active'"
+          :class="[
+            activeManageTab === 'active' 
+              ? 'border-emerald-600 text-emerald-600 font-bold' 
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+          ]"
+          class="pb-4 border-b-2 text-sm font-semibold transition duration-200 cursor-pointer flex items-center gap-2"
+        >
+          🥗 Thực phẩm đang chia sẻ
+          <span 
+            :class="activeManageTab === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'" 
+            class="text-[10px] px-2 py-0.5 rounded-full font-bold"
+          >
+            {{ activePosts.length }}
+          </span>
+        </button>
+        <button 
+          @click="activeManageTab = 'inactive'"
+          :class="[
+            activeManageTab === 'inactive' 
+              ? 'border-emerald-600 text-emerald-600 font-bold' 
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+          ]"
+          class="pb-4 border-b-2 text-sm font-semibold transition duration-200 cursor-pointer flex items-center gap-2"
+        >
+          🛑 Hết hạn & Tạm ẩn
+          <span 
+            :class="activeManageTab === 'inactive' ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-600'" 
+            class="text-[10px] px-2 py-0.5 rounded-full font-bold"
+          >
+            {{ inactivePosts.length }}
+          </span>
+        </button>
+      </div>
+
+      <!-- Danh sách bài đăng dạng lưới thẻ (Grid Cards) -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         <div 
-          v-for="post in foodPosts" 
+          v-for="post in (activeManageTab === 'active' ? activePosts : inactivePosts)" 
           :key="post.id" 
           class="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition duration-200 flex flex-col group"
         >
@@ -138,7 +199,7 @@ const handleSubmit = () => {
           <div class="relative bg-gray-50 h-48 overflow-hidden flex items-center justify-center text-gray-400 text-sm font-medium border-b border-gray-100">
             <!-- Nếu có tên ảnh mock từ input file, ta dùng ảnh minh họa từ Unsplash tương ứng, nếu không có thì hiện ảnh mặc định -->
             <img 
-              :src="post.image_url ? 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80' : 'https://images.unsplash.com/photo-1488459718432-36c55e7946d5?auto=format&fit=crop&w=600&q=80'" 
+              :src="post.image_url ? post.image_url : 'https://images.unsplash.com/photo-1488459718432-36c55e7946d5?auto=format&fit=crop&w=600&q=80'" 
               class="w-full h-full object-cover group-hover:scale-105 transition duration-300"
               alt="Hình ảnh thực phẩm"
             />
@@ -146,6 +207,11 @@ const handleSubmit = () => {
             <!-- Danh mục ghim góc trên trái -->
             <span class="absolute top-3 left-3 bg-white/90 backdrop-blur-md text-emerald-800 text-[10px] font-bold px-2.5 py-1.5 rounded-xl border border-emerald-100 shadow-sm">
               📂 {{ getCategoryName(post.category_id) }}
+            </span>
+
+            <!-- Nhãn AI kiểm duyệt ở góc trên phải -->
+            <span v-if="post.ai_status === 'safe'" class="absolute top-3 right-3 bg-emerald-600/90 backdrop-blur-md text-white text-[9px] font-bold px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
+              🛡️ Đã kiểm duyệt bởi AI
             </span>
           </div>
 
@@ -178,17 +244,17 @@ const handleSubmit = () => {
               </div>
             </div>
 
-            <!-- 3. Huy hiệu trạng thái và Nút đóng/mở ẩn tin -->
+            <!-- 3. Huy hệ trạng thái và Nút đóng/mở ẩn tin -->
             <div class="space-y-3 pt-2">
               <div class="flex justify-between items-center gap-2 border-t border-gray-50 pt-3">
                 <!-- Trạng thái hoạt động -->
                 <div class="flex items-center gap-1">
                   <span class="text-[10px] text-gray-400">Tin đăng:</span>
                   <span 
-                    :class="post.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'"
+                    :class="(post.status === 'available' && new Date(post.expires_at) > currentTime) ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'"
                     class="text-[10px] font-bold px-2 py-0.5 rounded-md border"
                   >
-                    {{ post.status === 'active' ? 'Đang chạy' : 'Đã dừng' }}
+                    {{ (post.status === 'available' && new Date(post.expires_at) > currentTime) ? 'Đang chạy' : 'Đã dừng / Hết hạn' }}
                   </span>
                 </div>
                 
@@ -197,32 +263,37 @@ const handleSubmit = () => {
                   <span class="text-[10px] text-gray-400">AI duyệt:</span>
                   <span 
                     :class="{
-                      'bg-emerald-50 text-emerald-700 border-emerald-100': post.ai_status === 'verified',
-                      'bg-amber-50 text-amber-700 border-amber-100': post.ai_status === 'pending',
-                      'bg-red-50 text-red-700 border-red-100': post.ai_status === 'rejected'
+                      'bg-emerald-50 text-emerald-700 border-emerald-100': post.ai_status === 'safe',
+                      'bg-amber-50 text-amber-700 border-amber-100': post.ai_status === 'unchecked',
+                      'bg-red-50 text-red-700 border-red-100': post.ai_status === 'flagged'
                     }"
                     class="text-[10px] font-bold px-2 py-0.5 rounded-md border"
                   >
-                    {{ post.ai_status === 'verified' ? 'Đã duyệt' : (post.ai_status === 'pending' ? 'Đang duyệt' : 'Từ chối') }}
+                    {{ post.ai_status === 'safe' ? 'Đã duyệt' : (post.ai_status === 'unchecked' ? 'Đang duyệt' : 'Từ chối') }}
                   </span>
                 </div>
               </div>
 
-              <!-- Nút chuyển đổi trạng thái hiển thị của bài đăng (Giả lập tương tác) -->
+              <!-- Nút chuyển đổi trạng thái hiển thị của bài đăng thực tế -->
               <button 
-                @click="post.status = post.status === 'active' ? 'expired' : 'active'"
-                :class="post.status === 'active' ? 'bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 border-gray-200 hover:border-red-200' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'"
-                class="w-full font-bold text-xs py-2.5 px-4 rounded-xl transition border text-center"
+                @click="handleToggleStatus(post.id)"
+                :class="(post.status === 'available' && new Date(post.expires_at) > currentTime) ? 'bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 border-gray-200 hover:border-red-200' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'"
+                class="w-full font-bold text-xs py-2.5 px-4 rounded-xl transition border text-center cursor-pointer"
               >
-                {{ post.status === 'active' ? '🛑 Tạm dừng hiển thị' : '✅ Kích hoạt lại' }}
+                {{ (post.status === 'available' && new Date(post.expires_at) > currentTime) ? '🛑 Tạm dừng hiển thị' : '✅ Gia hạn & Kích hoạt' }}
               </button>
             </div>
           </div>
         </div>
 
-        <!-- Trống dữ liệu -->
-        <div v-if="foodPosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-300 rounded-3xl p-12 text-center text-gray-400 text-sm">
-          Bạn chưa đăng tặng thực phẩm nào. Hãy bấm "Đăng tặng thực phẩm mới" để bắt đầu!
+        <!-- Trống dữ liệu cho Tab Đang chia sẻ -->
+        <div v-if="activeManageTab === 'active' && activePosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-300 rounded-3xl p-12 text-center text-gray-400 text-sm">
+          Không có thực phẩm nào đang chia sẻ. Hãy bấm "Đăng tặng thực phẩm mới" để bắt đầu!
+        </div>
+
+        <!-- Trống dữ liệu cho Tab Hết hạn & Tạm ẩn -->
+        <div v-if="activeManageTab === 'inactive' && inactivePosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-300 rounded-3xl p-12 text-center text-gray-400 text-sm">
+          Không có thực phẩm nào đã hết hạn hoặc tạm ẩn.
         </div>
       </div>
 
@@ -255,95 +326,100 @@ const handleSubmit = () => {
 
           <form @submit.prevent="handleSubmit" class="space-y-6">
 
-            
             <!-- 1. Tiêu đề bài đăng (Tên món ăn) -->
             <div class="space-y-1.5">
-              <label class="text-xs font-semibold text-gray-700">Tên món ăn / Thực phẩm</label>
+              <label class="text-xs font-semibold text-gray-700">Tên món ăn / Thực phẩm <span class="text-red-500">*</span></label>
               <input 
                 type="text" 
                 v-model="form.title"
-                required
-                class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
+                :class="form.errors.title ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
                 placeholder="Ví dụ: Bánh bao chay, cơm gà xối mỡ..."
-            />
+              />
+              <p v-if="form.errors.title" class="text-red-500 text-[11px] font-semibold mt-1">{{ form.errors.title }}</p>
             </div>
 
             <!-- Grid 2 cột -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
               <!-- 2. Danh mục thực phẩm -->
               <div class="space-y-1.5">
-                <label class="text-xs font-semibold text-gray-700">Danh mục</label>
+                <label class="text-xs font-semibold text-gray-700">Danh mục <span class="text-red-500">*</span></label>
                 <select 
-            v-model="form.category_id"
-            required
-            class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-            >
-            <option value="" disabled>-- Chọn danh mục --</option>
-            <option v-for="cat in categories" :key="cat.id" :value="cat.id">
-                {{ cat.name }}
-            </option>
-            </select>
+                  v-model="form.category_id"
+                  :class="form.errors.category_id ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                  class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                >
+                  <option value="" disabled>-- Chọn danh mục --</option>
+                  <option v-for="cat in categories" :key="cat.id" :value="cat.id">
+                    {{ cat.name }}
+                  </option>
+                </select>
+                <p v-if="form.errors.category_id" class="text-red-500 text-[11px] font-semibold mt-1">{{ form.errors.category_id }}</p>
               </div>
 
               <!-- 3. Hạn sử dụng -->
               <div class="space-y-1.5">
-                <label class="text-xs font-semibold text-gray-700">Hạn sử dụng</label>
+                <label class="text-xs font-semibold text-gray-700">Hạn sử dụng <span class="text-red-500">*</span></label>
                 <input 
                     type="datetime-local" 
                     v-model="form.expires_at"
-                    required
-                    class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-              />
+                    :class="form.errors.expires_at ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                    class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                />
+                <p v-if="form.errors.expires_at" class="text-red-500 text-[11px] font-semibold mt-1">{{ form.errors.expires_at }}</p>
               </div>
 
               <!-- 4. Số lượng ban đầu -->
               <div class="space-y-1.5">
-                <label class="text-xs font-semibold text-gray-700">Số lượng</label>
+                <label class="text-xs font-semibold text-gray-700">Số lượng <span class="text-red-500">*</span></label>
                 <input 
-                type="number" 
-                v-model.number="form.original_quantity"
-                min="1"
-                required
-                class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                placeholder="Ví dụ: 5, 10..."
+                  type="number" 
+                  v-model.number="form.original_quantity"
+                  min="1"
+                  :class="form.errors.original_quantity ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                  class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                  placeholder="Ví dụ: 5, 10..."
                 />
+                <p v-if="form.errors.original_quantity" class="text-red-500 text-[11px] font-semibold mt-1">{{ form.errors.original_quantity }}</p>
               </div>
 
               <!-- 5. Đơn vị tính -->
               <div class="space-y-1.5">
-                <label class="text-xs font-semibold text-gray-700">Đơn vị tính</label>
+                <label class="text-xs font-semibold text-gray-700">Đơn vị tính <span class="text-red-500">*</span></label>
                 <input 
-                type="text" 
-                v-model="form.unit"
-                required
-                class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                placeholder="Ví dụ: suất, hộp, cái, kg..."
+                  type="text" 
+                  v-model="form.unit"
+                  :class="form.errors.unit ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                  class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                  placeholder="Ví dụ: suất, hộp, cái, kg..."
                 />
+                <p v-if="form.errors.unit" class="text-red-500 text-[11px] font-semibold mt-1">{{ form.errors.unit }}</p>
               </div>
             </div>
 
             <!-- 6. Mô tả chi tiết -->
             <div class="space-y-1.5">
-              <label class="text-xs font-semibold text-gray-700">Mô tả chi tiết</label>
+              <label class="text-xs font-semibold text-gray-700">Mô tả chi tiết <span class="text-red-500">*</span></label>
               <textarea 
-            v-model="form.description"
-            rows="3"
-            required
-            class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-            placeholder="Mô tả tình trạng thực phẩm (Ví dụ: Mới nấu trưa nay, đóng gói sạch sẽ...)"
-            ></textarea>
+                v-model="form.description"
+                rows="3"
+                :class="form.errors.description ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                placeholder="Mô tả tình trạng thực phẩm (Ví dụ: Mới nấu trưa nay, đóng gói sạch sẽ...)"
+              ></textarea>
+              <p v-if="form.errors.description" class="text-red-500 text-[11px] font-semibold mt-1">{{ form.errors.description }}</p>
             </div>
 
             <!-- 7. Hình ảnh minh họa -->
             <div class="space-y-1.5">
               <label class="text-xs font-semibold text-gray-700">Hình ảnh thực tế</label>
-              <label class="text-xs font-semibold text-gray-700">Hình ảnh thực tế</label>
-            <input 
-              type="file" 
-              accept="image/*"
-              @change="(e) => form.image_url = e.target.files[0]?.name || ''"
-              class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 transition cursor-pointer"
+              <input 
+                type="file" 
+                accept="image/*"
+                @change="(e) => form.image = e.target.files[0]"
+                class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 transition cursor-pointer"
               />
+              <p v-if="form.errors.image" class="text-red-500 text-[11px] font-semibold mt-1">{{ form.errors.image }}</p>
             </div>
 
             <!-- Nút gửi -->
