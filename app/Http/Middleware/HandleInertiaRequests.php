@@ -33,6 +33,12 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+                'receivedClaims' => $request->user() ? \App\Models\FoodClaim::whereHas('foodPost', function ($query) use ($request) {
+                        $query->where('user_id', $request->user()->id);
+                    })
+                    ->with(['user', 'foodPost'])
+                    ->latest()
+                    ->get() : [],
             ],
         ];
     }

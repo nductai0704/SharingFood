@@ -54,4 +54,12 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         $this->sendEmailVerificationOTP();
     }
+
+    /**
+     * Mối quan hệ với các yêu cầu nhận thực phẩm của người dùng
+     */
+    public function claims()
+    {
+        return $this->hasMany(FoodClaim::class);
+    }
 }

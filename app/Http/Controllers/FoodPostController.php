@@ -134,4 +134,250 @@ class FoodPostController extends Controller
 
         return redirect()->back()->with('success', 'Cập nhật trạng thái thực phẩm thành công!');
     }
+
+    /**
+     * Yêu cầu nhận thực phẩm lẻ (Concurrency Lock - lockForUpdate)
+     */
+    public function claim(Request $request, $id)
+    {
+        $request->validate([
+            'quantity' => 'required|integer|min:1'
+        ]);
+        
+        $requestedQty = $request->input('quantity');
+        $user = auth()->user();
+        
+        try {
+            $result = \DB::transaction(function() use ($id, $requestedQty, $user) {
+                // Pessimistic Locking (Khóa dòng dữ liệu để chống tranh giành)
+                $post = FoodPost::lockForUpdate()->findOrFail($id);
+                
+                // Tránh tự nhận đồ ăn của mình
+                if ($post->user_id === $user->id) {
+                    return ['success' => false, 'message' => 'Bạn không thể tự nhận thực phẩm của chính mình.'];
+                }
+                
+                // Kiểm tra hạn sử dụng và trạng thái
+                if (new \DateTime($post->expires_at) < new \DateTime() || $post->status !== 'available') {
+                    return ['success' => false, 'message' => 'Rất tiếc, thực phẩm này đã hết hạn hoặc không còn chia sẻ.'];
+                }
+                
+                // Kiểm tra số lượng tồn kho
+                if ($post->remain_quantity < $requestedQty) {
+                    return ['success' => false, 'message' => "Rất tiếc, thực phẩm đã được nhận hết hoặc không đủ số lượng (chỉ còn {$post->remain_quantity} {$post->unit})."];
+                }
+                
+                // Khấu trừ số lượng
+                $post->remain_quantity -= $requestedQty;
+                if ($post->remain_quantity <= 0) {
+                    $post->status = 'expired';
+                }
+                $post->save();
+                
+                // Tạo yêu cầu nhận thực phẩm (Hóa đơn)
+                \App\Models\FoodClaim::create([
+                    'food_post_id' => $post->id,
+                    'user_id' => $user->id,
+                    'quantity' => $requestedQty,
+                    'status' => 'pending',
+                ]);
+                
+                // Nhật ký hệ thống
+                \App\Models\SystemLog::create([
+                    'action' => 'Yêu cầu nhận thực phẩm',
+                    'description' => "Người dùng {$user->name} đã gửi yêu cầu nhận {$requestedQty} {$post->unit} từ bài viết \"{$post->title}\"",
+                    'user_id' => $user->id,
+                    'ip_address' => request()->ip(),
+                    'created_at' => now()
+                ]);
+                
+                return ['success' => true, 'message' => 'Gửi yêu cầu nhận thực phẩm thành công! Vui lòng chờ người chia sẻ phê duyệt.'];
+            });
+            
+            if ($result['success']) {
+                return redirect()->back()->with('success', $result['message']);
+            } else {
+                return redirect()->back()->with('error', $result['message']);
+            }
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Có lỗi xảy ra: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Phê duyệt / Từ chối yêu cầu nhận thực phẩm
+     */
+    public function updateClaimStatus(Request $request, $claimId)
+    {
+        $request->validate([
+            'status' => 'required|in:approved,rejected'
+        ]);
+        
+        $newStatus = $request->input('status');
+        $user = auth()->user();
+        
+        try {
+            $result = \DB::transaction(function() use ($claimId, $newStatus, $user) {
+                // Khóa yêu cầu và bài viết liên quan
+                $claim = \App\Models\FoodClaim::lockForUpdate()->findOrFail($claimId);
+                $post = FoodPost::lockForUpdate()->findOrFail($claim->food_post_id);
+                
+                // Xác thực quyền sở hữu
+                if ($post->user_id !== $user->id) {
+                    return ['success' => false, 'message' => 'Bạn không có quyền thực hiện thao tác này.'];
+                }
+                
+                if ($claim->status !== 'pending') {
+                    return ['success' => false, 'message' => 'Yêu cầu này đã được xử lý trước đó.'];
+                }
+                
+                if ($newStatus === 'approved') {
+                    $claim->status = 'approved';
+                    $claim->save();
+                    
+                    \App\Models\SystemLog::create([
+                        'action' => 'Phê duyệt yêu cầu',
+                        'description' => "Người chia sẻ {$user->name} đã phê duyệt yêu cầu nhận {$claim->quantity} {$post->unit} của {$claim->user->name}",
+                        'user_id' => $user->id,
+                        'ip_address' => request()->ip(),
+                        'created_at' => now()
+                    ]);
+                } else {
+                    $claim->status = 'rejected';
+                    $claim->save();
+                    
+                    // Hoàn lại kho thực phẩm
+                    $post->remain_quantity += $claim->quantity;
+                    if ($post->status === 'expired' && $post->remain_quantity > 0 && new \DateTime($post->expires_at) > new \DateTime()) {
+                        $post->status = 'available';
+                    }
+                    $post->save();
+                    
+                    \App\Models\SystemLog::create([
+                        'action' => 'Từ chối yêu cầu nhận',
+                        'description' => "Người chia sẻ {$user->name} từ chối/hủy yêu cầu nhận của {$claim->user->name}, hoàn lại {$claim->quantity} {$post->unit}",
+                        'user_id' => $user->id,
+                        'ip_address' => request()->ip(),
+                        'created_at' => now()
+                    ]);
+                }
+                
+                return ['success' => true, 'message' => 'Cập nhật trạng thái yêu cầu thành công!'];
+            });
+            
+            if ($result['success']) {
+                return redirect()->back()->with('success', $result['message']);
+            } else {
+                return redirect()->back()->with('error', $result['message']);
+            }
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Lỗi khi xử lý: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Hủy yêu cầu nhận thực phẩm (Hủy giao dịch & Rollback hoàn kho)
+     */
+    public function cancelClaim(Request $request, $claimId)
+    {
+        $user = auth()->user();
+        
+        try {
+            $result = \DB::transaction(function() use ($claimId, $user) {
+                // Khóa yêu cầu và bài viết liên quan
+                $claim = \App\Models\FoodClaim::lockForUpdate()->findOrFail($claimId);
+                $post = FoodPost::lockForUpdate()->findOrFail($claim->food_post_id);
+                
+                // Xác thực quyền: chỉ Người cho hoặc Người nhận mới được phép hủy
+                if ($post->user_id !== $user->id && $claim->user_id !== $user->id) {
+                    return ['success' => false, 'message' => 'Bạn không có quyền thực hiện thao tác này.'];
+                }
+                
+                // Chỉ cho phép hủy khi trạng thái là pending hoặc approved
+                if (!in_array($claim->status, ['pending', 'approved'])) {
+                    return ['success' => false, 'message' => 'Yêu cầu này không thể hủy ở trạng thái hiện tại.'];
+                }
+                
+                $claim->status = 'cancelled';
+                $claim->save();
+                
+                // Hoàn lại kho thực phẩm
+                $post->remain_quantity += $claim->quantity;
+                
+                // Nếu bài đăng đã hết hạn hoặc tạm dừng ẩn, nhưng còn số lượng và thời gian hết hạn vẫn ở tương lai, tự động khôi phục status
+                if ($post->remain_quantity > 0 && new \DateTime($post->expires_at) > new \DateTime()) {
+                    $post->status = 'available';
+                }
+                $post->save();
+                
+                // Ghi nhật ký hệ thống
+                $party = ($user->id === $post->user_id) ? "Người cho" : "Người nhận";
+                \App\Models\SystemLog::create([
+                    'action' => 'Hủy yêu cầu nhận',
+                    'description' => "{$party} {$user->name} đã hủy giao dịch nhận {$claim->quantity} {$post->unit} từ bài đăng \"{$post->title}\". Đã hoàn kho số lượng.",
+                    'user_id' => $user->id,
+                    'ip_address' => request()->ip(),
+                    'created_at' => now()
+                ]);
+                
+                return ['success' => true, 'message' => 'Hủy giao dịch và hoàn lại kho thành công!'];
+            });
+            
+            if ($result['success']) {
+                return redirect()->back()->with('success', $result['message']);
+            } else {
+                return redirect()->back()->with('error', $result['message']);
+            }
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Lỗi khi xử lý hủy: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Xác nhận hoàn thành giao dịch (Đã lấy đồ)
+     */
+    public function completeClaim(Request $request, $claimId)
+    {
+        $user = auth()->user();
+        
+        try {
+            $result = \DB::transaction(function() use ($claimId, $user) {
+                // Khóa yêu cầu và bài viết liên quan
+                $claim = \App\Models\FoodClaim::lockForUpdate()->findOrFail($claimId);
+                $post = FoodPost::lockForUpdate()->findOrFail($claim->food_post_id);
+                
+                // Xác thực quyền: chỉ Người cho mới được phép hoàn thành
+                if ($post->user_id !== $user->id) {
+                    return ['success' => false, 'message' => 'Chỉ chủ nhà (người chia sẻ) mới có quyền xác nhận giao đồ.'];
+                }
+                
+                // Chỉ cho phép xác nhận khi trạng thái là approved
+                if ($claim->status !== 'approved') {
+                    return ['success' => false, 'message' => 'Giao dịch chỉ có thể hoàn thành khi đã được duyệt trước đó.'];
+                }
+                
+                $claim->status = 'completed';
+                $claim->save();
+                
+                // Ghi nhật ký hệ thống
+                \App\Models\SystemLog::create([
+                    'action' => 'Hoàn thành giao dịch',
+                    'description' => "Chủ nhà {$user->name} đã xác nhận giao đồ ăn thành công cho {$claim->user->name} ({$claim->quantity} {$post->unit} từ bài đăng \"{$post->title}\")",
+                    'user_id' => $user->id,
+                    'ip_address' => request()->ip(),
+                    'created_at' => now()
+                ]);
+                
+                return ['success' => true, 'message' => 'Xác nhận hoàn thành giao dịch thành công! Chúc mừng hai bên!'];
+            });
+            
+            if ($result['success']) {
+                return redirect()->back()->with('success', $result['message']);
+            } else {
+                return redirect()->back()->with('error', $result['message']);
+            }
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', 'Lỗi khi xác nhận hoàn thành: ' . $e->getMessage());
+        }
+    }
 }

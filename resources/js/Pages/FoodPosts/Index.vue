@@ -189,7 +189,7 @@ const handleSubmit = () => {
       </div>
 
       <!-- Danh sách bài đăng dạng lưới thẻ (Grid Cards) -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
         <div 
           v-for="post in (activeManageTab === 'active' ? activePosts : inactivePosts)" 
           :key="post.id" 
@@ -282,6 +282,45 @@ const handleSubmit = () => {
               >
                 {{ (post.status === 'available' && new Date(post.expires_at) > currentTime) ? '🛑 Tạm dừng hiển thị' : '✅ Gia hạn & Kích hoạt' }}
               </button>
+
+              <!-- Danh sách người đăng ký nhận -->
+              <div v-if="post.claims && post.claims.length > 0" class="mt-4 pt-4 border-t border-gray-100 space-y-3">
+                <div class="flex justify-between items-center">
+                  <span class="text-xs font-extrabold text-gray-900 uppercase tracking-wider">Danh sách đăng ký nhận:</span>
+                  <span class="bg-amber-50 text-amber-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                    {{ post.claims.length }} lượt
+                  </span>
+                </div>
+                
+                <div class="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  <div 
+                    v-for="claim in post.claims" 
+                    :key="claim.id"
+                    class="p-2.5 bg-gray-50 rounded-xl border border-gray-100 space-y-2 text-xs"
+                  >
+                    <div class="flex justify-between items-center gap-2">
+                      <div class="font-semibold text-gray-800 flex items-center gap-1">
+                        👤 {{ claim.user?.name || 'Người dùng' }}
+                      </div>
+                      <span 
+                        :class="{
+                          'bg-amber-50 text-amber-700 border-amber-100': claim.status === 'pending',
+                          'bg-emerald-50 text-emerald-700 border-emerald-100': claim.status === 'approved',
+                          'bg-red-50 text-red-700 border-red-100': claim.status === 'rejected'
+                        }"
+                        class="text-[9px] font-bold px-1.5 py-0.5 rounded border shrink-0"
+                      >
+                        {{ claim.status === 'pending' ? 'Chờ duyệt' : (claim.status === 'approved' ? 'Đã duyệt' : 'Từ chối') }}
+                      </span>
+                    </div>
+                    
+                    <div class="flex justify-between items-center text-[11px] text-gray-500">
+                      <span>Đăng ký xin: <b>{{ claim.quantity }} {{ post.unit }}</b></span>
+                      <span class="text-[10px] text-gray-400">{{ new Date(claim.created_at).toLocaleDateString('vi-VN') }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

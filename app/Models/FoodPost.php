@@ -16,4 +16,12 @@ class FoodPost extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    /**
+     * Mối quan hệ với các yêu cầu nhận thực phẩm lẻ
+     */
+    public function claims()
+    {
+        return $this->hasMany(FoodClaim::class);
+    }
 }
