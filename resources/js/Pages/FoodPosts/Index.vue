@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch, onUnmounted, computed, onMounted } from 'vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
 // 1. Nhận props từ controller
 const props = defineProps({
@@ -176,33 +177,27 @@ const handleSubmit = () => {
 </script>
 
 <template>
-  <div class="min-h-screen bg-gray-50/50 py-8 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-7xl mx-auto space-y-6">
-      
-      <!-- Tiêu đề trang & Nút hành động -->
-      <div class="flex justify-between items-center border-b border-gray-100 pb-5">
-        <div>
-          <h1 class="text-2xl font-bold text-gray-950 tracking-tight">Quản lý thực phẩm quyên tặng</h1>
-          <p class="text-xs text-gray-500 mt-1">Danh sách thực phẩm lẻ cá nhân/doanh nghiệp bạn đang chia sẻ.</p>
-        </div>
+  <AuthenticatedLayout>
+    <div class="min-h-screen bg-gray-50/50 py-8 px-4 sm:px-6 lg:px-8">
+      <div class="max-w-7xl mx-auto space-y-6">
         
-        <div class="flex items-center gap-3">
-        <Link 
-            :href="$page.props.auth.user?.role === 'charity' ? route('charity.dashboard') : '/'" 
-            class="text-xs font-semibold text-gray-500 hover:text-gray-700"
-          >
-            ← Quay lại Trang chủ
-          </Link>
-
-          <button 
-            @click="isCreateModalOpen = true"
-            class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2.5 px-4 rounded-xl transition duration-200 shadow-sm flex items-center gap-1.5"
-          >
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-            Đăng tặng thực phẩm mới
-          </button>
+        <!-- Tiêu đề trang & Nút hành động -->
+        <div class="flex justify-between items-center border-b border-gray-100 pb-5">
+          <div>
+            <h1 class="text-2xl font-bold text-gray-950 tracking-tight">Quản lý thực phẩm quyên tặng</h1>
+            <p class="text-xs text-gray-500 mt-1">Danh sách thực phẩm lẻ cá nhân/doanh nghiệp bạn đang chia sẻ.</p>
+          </div>
+          
+          <div class="flex items-center gap-3">
+            <button 
+              @click="isCreateModalOpen = true"
+              class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs py-2.5 px-4 rounded-xl transition duration-200 shadow-sm flex items-center gap-1.5"
+            >
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+              Đăng tặng thực phẩm mới
+            </button>
+          </div>
         </div>
-      </div>
 
       <!-- Bộ chọn Tab Quản lý Thực phẩm -->
       <div class="flex border-b border-gray-100 pb-px gap-6">
@@ -750,6 +745,7 @@ const handleSubmit = () => {
           </form>
         </div>
       </div>
+  </AuthenticatedLayout>
 </template>
 <style scoped>
 /* Tùy chỉnh thanh cuộn của modal cho mượt và bo tròn */

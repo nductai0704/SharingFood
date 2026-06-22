@@ -249,7 +249,7 @@ watch(() => [form.latitude, form.longitude], ([newLat, newLng]) => {
 
 const getRoleLabel = (role) => {
     const labels = {
-        admin: 'admin',
+        admin: 'Quản trị viên (Admin)',
         charity: 'Tổ chức từ thiện (Mái ấm)',
         small_business: 'Doanh nghiệp nhỏ / Hộ kinh doanh',
         personal: 'Cá nhân',
@@ -269,129 +269,168 @@ const getStatusLabel = (status) => {
 </script>
 
 <template>
-    <section class="space-y-6">
-        <header>
-            <h2 class="text-lg font-bold text-gray-950">
-                Thông tin tài khoản
+    <div class="bg-white rounded-3xl border border-gray-100 shadow-sm p-6 sm:p-8 space-y-8">
+        <!-- Tiêu đề & Mô tả -->
+        <div class="border-b border-gray-50 pb-5">
+            <h2 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                <span class="w-2 h-6 bg-emerald-600 rounded-full"></span>
+                Thông tin hồ sơ của bạn
             </h2>
-
-            <p class="mt-1 text-xs text-gray-500">
-                Xem và cập nhật thông tin cá nhân, số điện thoại liên lạc cũng như tọa độ GPS của bạn.
+            <p class="mt-1.5 text-xs text-gray-500 leading-relaxed">
+                Xem và cập nhật thông tin cá nhân, hình ảnh đại diện, số điện thoại liên lạc cũng như thiết lập tọa độ địa lý GPS để chia sẻ hoặc nhận thực phẩm chính xác nhất.
             </p>
-        </header>
+        </div>
 
-        <form
-            @submit.prevent="submitForm"
-            class="space-y-5"
-        >
-            <!-- Ảnh đại diện (Avatar) -->
-            <div class="flex items-center space-x-6 bg-slate-50 p-4 rounded-2xl border border-slate-100/80">
-                <div class="relative shrink-0">
-                    <img 
-                        v-if="avatarPreview || user.avatar" 
-                        :src="avatarPreview || user.avatar" 
-                        class="w-20 h-20 rounded-full object-cover border-2 border-emerald-500 shadow-sm"
-                        alt="Ảnh đại diện"
-                    />
-                    <div 
-                        v-else 
-                        class="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-teal-500 text-white flex items-center justify-center text-2xl font-bold uppercase shadow-sm"
-                    >
-                        {{ user.name.charAt(0) }}
-                    </div>
-                </div>
-
-                <div class="space-y-2">
-                    <span class="text-xs font-semibold text-gray-700 tracking-wide block">Ảnh đại diện</span>
-                    <input 
-                        id="avatar" 
-                        type="file" 
-                        ref="avatarInput"
-                        class="hidden" 
-                        accept="image/*"
-                        @change="handleAvatarChange"
-                    />
-                    <div class="flex gap-2">
-                        <button 
-                            type="button" 
-                            @click="$refs.avatarInput.click()"
-                            class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold py-2 px-3 rounded-lg shadow-sm transition"
-                        >
-                            Chọn ảnh mới
-                        </button>
-                        <button 
-                            v-if="form.avatar || avatarPreview"
-                            type="button" 
-                            @click="resetAvatar"
-                            class="bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-semibold py-2 px-3 rounded-lg transition"
-                        >
-                            Hủy chọn
-                        </button>
-                    </div>
-                    <p class="text-[10px] text-gray-400">Hỗ trợ JPG, PNG. Dung lượng tối đa 2MB.</p>
-                    <InputError :message="form.errors.avatar" class="mt-1" />
-                </div>
-            </div>
-            <!-- Thẻ thông tin hệ thống (Đọc) -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-gray-50 p-4 rounded-2xl border border-gray-200/60 text-xs">
-                <div class="space-y-1">
-                    <span class="font-semibold text-gray-500 uppercase tracking-wider block">Vai trò trong hệ thống</span>
-                    <span class="font-bold text-gray-900 text-sm block">{{ getRoleLabel(user.role) }}</span>
-                </div>
-                <div class="space-y-1">
-                    <span class="font-semibold text-gray-500 uppercase tracking-wider block">Trạng thái xác minh</span>
-                    <span :class="{
-                        'text-emerald-700': user.status === 'verified',
-                        'text-amber-700': user.status === 'pending',
-                        'text-red-700': user.status === 'banned' || user.status === 'rejected'
-                    }" class="font-bold text-sm block">
-                        {{ getStatusLabel(user.status) }}
-                    </span>
-                </div>
-            </div>
-
-            <!-- Minh chứng Mái ấm (chỉ hiển thị với vai trò charity) -->
-            <div v-if="user.role === 'charity' && Object.keys(charityDocuments).length > 0" class="space-y-3 bg-gray-50 p-4 rounded-2xl border border-gray-200/60">
-                <span class="font-semibold text-gray-500 uppercase tracking-wider text-xs block">Giấy tờ & Hình ảnh minh chứng hoạt động</span>
+        <form @submit.prevent="submitForm" class="space-y-8">
+            <!-- 1. Ảnh đại diện & Thông tin hệ thống (Hàng trên cùng) -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
                 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <!-- Khung Avatar cao cấp -->
+                <div class="bg-gray-50/50 border border-gray-100 rounded-2xl p-5 flex flex-col items-center text-center space-y-4 lg:col-span-1 shadow-sm">
+                    <div class="relative group">
+                        <img 
+                            v-if="avatarPreview || user.avatar" 
+                            :src="avatarPreview || user.avatar" 
+                            class="w-24 h-24 rounded-full object-cover border-4 border-white shadow-md group-hover:opacity-90 transition duration-200"
+                            alt="Ảnh đại diện"
+                        />
+                        <div 
+                            v-else 
+                            class="w-24 h-24 rounded-full bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center text-3xl font-bold shadow-md"
+                        >
+                            {{ user.name.charAt(0).toUpperCase() }}
+                        </div>
+                        <!-- Nút kích hoạt upload ảnh nhanh -->
+                        <button
+                            type="button"
+                            @click="$refs.avatarInput.click()"
+                            class="absolute bottom-0 right-0 bg-emerald-600 hover:bg-emerald-700 text-white p-2 rounded-full shadow-md transition duration-200 cursor-pointer"
+                        >
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                        </button>
+                    </div>
+
+                    <div class="space-y-1 w-full">
+                        <h4 class="text-sm font-bold text-gray-900">Ảnh đại diện</h4>
+                        <p class="text-[10px] text-gray-400">Hỗ trợ JPG, PNG tối đa 2MB.</p>
+                        
+                        <input 
+                            id="avatar" 
+                            type="file" 
+                            ref="avatarInput"
+                            class="hidden" 
+                            accept="image/*"
+                            @change="handleAvatarChange"
+                        />
+                        <div class="flex justify-center gap-2 pt-2">
+                            <button 
+                                type="button" 
+                                @click="$refs.avatarInput.click()"
+                                class="bg-gray-100 hover:bg-emerald-50 text-gray-700 hover:text-emerald-700 text-[11px] font-bold py-1.5 px-3 rounded-lg border border-gray-200 hover:border-emerald-200 transition cursor-pointer"
+                            >
+                                Thay đổi
+                            </button>
+                            <button 
+                                v-if="form.avatar || avatarPreview"
+                                type="button" 
+                                @click="resetAvatar"
+                                class="bg-red-50 hover:bg-red-100 text-red-600 text-[11px] font-bold py-1.5 px-3 rounded-lg border border-red-200 transition cursor-pointer"
+                            >
+                                Hủy
+                            </button>
+                        </div>
+                        <InputError :message="form.errors.avatar" class="mt-1" />
+                    </div>
+                </div>
+
+                <!-- Thẻ trạng thái & Vai trò cao cấp -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 lg:col-span-2">
+                    <div class="bg-emerald-50/30 border border-emerald-100/50 rounded-2xl p-5 flex items-start gap-4 shadow-sm">
+                        <div class="p-3 bg-emerald-100/60 rounded-xl text-emerald-700">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                            </svg>
+                        </div>
+                        <div class="space-y-1">
+                            <span class="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">Vai trò thành viên</span>
+                            <span class="text-sm font-bold text-gray-900 block">{{ getRoleLabel(user.role) }}</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-blue-50/30 border border-blue-100/50 rounded-2xl p-5 flex items-start gap-4 shadow-sm">
+                        <div class="p-3 bg-blue-100/60 rounded-xl text-blue-700">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                            </svg>
+                        </div>
+                        <div class="space-y-1">
+                            <span class="text-[10px] font-bold text-blue-800 uppercase tracking-wider block">Trạng thái phê duyệt</span>
+                            <div class="flex items-center gap-1.5">
+                                <span class="relative flex h-2 w-2" v-if="user.status === 'verified'">
+                                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                                </span>
+                                <span :class="{
+                                    'text-emerald-700 font-bold': user.status === 'verified',
+                                    'text-amber-700 font-bold': user.status === 'pending',
+                                    'text-red-700 font-bold': user.status === 'banned' || user.status === 'rejected'
+                                }" class="text-sm block">
+                                    {{ getStatusLabel(user.status) }}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Minh chứng hoạt động (Chỉ hiển thị cho Charity) -->
+            <div v-if="user.role === 'charity' && Object.keys(charityDocuments).length > 0" class="bg-slate-50/50 border border-slate-100 p-5 rounded-2xl space-y-4 shadow-sm">
+                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1.5">
+                    📄 Tài liệu minh chứng pháp lý mái ấm
+                </span>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                     <!-- Giấy phép hoạt động -->
-                    <div v-if="charityDocuments.legal_license" class="space-y-1">
-                        <span class="text-[11px] font-medium text-gray-500 block">Giấy phép hoạt động pháp lý:</span>
-                        <div class="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col items-center p-3 relative group">
+                    <div v-if="charityDocuments.legal_license" class="space-y-1.5">
+                        <span class="text-xs font-medium text-gray-500 block">Quyết định thành lập / Giấy phép hoạt động:</span>
+                        <div class="border border-gray-200/80 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col items-center p-4 relative group hover:border-emerald-500 transition duration-200">
                             <template v-if="charityDocuments.legal_license.toLowerCase().endsWith('.pdf')">
-                                <div class="w-full py-6 flex flex-col items-center justify-center text-red-500">
-                                    <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div class="w-full py-4 flex flex-col items-center justify-center text-red-500">
+                                    <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                     </svg>
-                                    <span class="text-xs text-gray-600 font-semibold mt-2">Tài liệu Giấy phép (PDF)</span>
+                                    <span class="text-xs text-gray-600 font-bold mt-2">Tài liệu pháp lý (PDF)</span>
                                 </div>
                             </template>
                             <template v-else>
-                                <img :src="charityDocuments.legal_license" alt="Giấy phép hoạt động" class="max-h-36 object-contain rounded-lg" />
+                                <img :src="charityDocuments.legal_license" alt="Giấy phép hoạt động" class="max-h-28 object-contain rounded-lg shadow-sm" />
                             </template>
-                            <a :href="charityDocuments.legal_license" target="_blank" class="mt-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+                            <a :href="charityDocuments.legal_license" target="_blank" class="mt-3 text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
                                 🔗 Xem tài liệu gốc
                             </a>
                         </div>
                     </div>
 
                     <!-- Hình ảnh cơ sở thực tế -->
-                    <div v-if="charityDocuments.facility_image" class="space-y-1">
-                        <span class="text-[11px] font-medium text-gray-500 block">Hình ảnh cơ sở thực tế:</span>
-                        <div class="border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col items-center p-3 relative group">
+                    <div v-if="charityDocuments.facility_image" class="space-y-1.5">
+                        <span class="text-xs font-medium text-gray-500 block">Hình ảnh cơ sở / mái ấm thực tế:</span>
+                        <div class="border border-gray-200/80 rounded-xl overflow-hidden bg-white shadow-sm flex flex-col items-center p-4 relative group hover:border-emerald-500 transition duration-200">
                             <template v-if="charityDocuments.facility_image.toLowerCase().endsWith('.pdf')">
-                                <div class="w-full py-6 flex flex-col items-center justify-center text-red-500">
-                                    <svg class="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <div class="w-full py-4 flex flex-col items-center justify-center text-red-500">
+                                    <svg class="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                                     </svg>
-                                    <span class="text-xs text-gray-600 font-semibold mt-2">Hình ảnh cơ sở (PDF)</span>
+                                    <span class="text-xs text-gray-600 font-bold mt-2">Hình ảnh cơ sở (PDF)</span>
                                 </div>
                             </template>
                             <template v-else>
-                                <img :src="charityDocuments.facility_image" alt="Hình ảnh cơ sở thực tế" class="max-h-36 object-contain rounded-lg" />
+                                <img :src="charityDocuments.facility_image" alt="Hình ảnh cơ sở thực tế" class="max-h-28 object-contain rounded-lg shadow-sm" />
                             </template>
-                            <a :href="charityDocuments.facility_image" target="_blank" class="mt-2 text-xs font-semibold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
+                            <a :href="charityDocuments.facility_image" target="_blank" class="mt-3 text-xs font-bold text-emerald-600 hover:text-emerald-700 flex items-center gap-1">
                                 🔗 Xem tài liệu gốc
                             </a>
                         </div>
@@ -399,173 +438,156 @@ const getStatusLabel = (status) => {
                 </div>
             </div>
 
-            <!-- Họ và tên -->
-            <div>
-                <InputLabel for="name" value="Họ và tên / Tên tổ chức" />
-
-                <TextInput
-                    id="name"
-                    type="text"
-                    class="mt-1 block w-full"
-                    v-model="form.name"
-                    required
-                    autofocus
-                    autocomplete="name"
-                />
-
-                <InputError class="mt-2" :message="form.errors.name" />
-            </div>
-
-            <!-- Email -->
-            <div>
-                <InputLabel for="email" value="Địa chỉ Email" />
-
-                <TextInput
-                    id="email"
-                    type="email"
-                    class="mt-1 block w-full bg-gray-50/50"
-                    v-model="form.email"
-                    required
-                    autocomplete="username"
-                />
-
-                <InputError class="mt-2" :message="form.errors.email" />
-            </div>
-
-            <!-- Số điện thoại -->
-            <div>
-                <InputLabel for="phone" value="Số điện thoại" />
-
-                <TextInput
-                    id="phone"
-                    type="text"
-                    class="mt-1 block w-full"
-                    v-model="form.phone"
-                    required
-                    placeholder="Nhập số điện thoại liên lạc"
-                />
-
-                <InputError class="mt-2" :message="form.errors.phone" />
-            </div>
-
-            <!-- Địa chỉ chi tiết -->
-            <div>
-                <InputLabel for="address" value="Địa chỉ chi tiết (Số nhà, tên đường...)" />
-
-                <TextInput
-                    id="address"
-                    type="text"
-                    class="mt-1 block w-full"
-                    v-model="form.address"
-                    required
-                    placeholder="Ví dụ: 123 Đường Nguyễn Trãi, Phường 2, Quận 5..."
-                />
-
-                <InputError class="mt-2" :message="form.errors.address" />
-            </div>
-
-            <!-- Tọa độ GPS -->
-            <div class="grid grid-cols-2 gap-4">
-                <div>
-                    <InputLabel for="latitude" value="Vĩ độ (Latitude)" />
-                    <TextInput
-                        id="latitude"
-                        type="number"
-                        step="any"
-                        class="mt-1 block w-full"
-                        v-model="form.latitude"
-                        placeholder="Vĩ độ"
-                    />
-                    <InputError class="mt-2" :message="form.errors.latitude" />
-                </div>
-                <div>
-                    <InputLabel for="longitude" value="Kinh độ (Longitude)" />
-                    <TextInput
-                        id="longitude"
-                        type="number"
-                        step="any"
-                        class="mt-1 block w-full"
-                        v-model="form.longitude"
-                        placeholder="Kinh độ"
-                    />
-                    <InputError class="mt-2" :message="form.errors.longitude" />
-                </div>
-            </div>
-
-            <!-- Bản đồ tương tác -->
-            <div class="space-y-2">
-                <span class="text-xs font-semibold text-gray-700 tracking-wide block">Bản đồ định vị vị trí</span>
+            <!-- 2. Nhóm thông tin chi tiết (2 Cột) -->
+            <div class="space-y-4">
+                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider block">
+                    👤 Thông tin liên hệ cơ bản
+                </span>
                 
-                <!-- Thanh tìm kiếm nhanh địa điểm trên bản đồ -->
-                <div class="flex gap-2">
-                    <input
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                    <div>
+                        <InputLabel for="name" value="Họ và tên / Tên tổ chức" class="text-xs font-semibold text-gray-700" />
+                        <TextInput
+                            id="name"
+                            type="text"
+                            class="mt-1.5 block w-full border-gray-200 focus:border-transparent focus:ring-2 focus:ring-emerald-500 rounded-xl bg-gray-50/30 text-sm py-2.5 px-4"
+                            v-model="form.name"
+                            required
+                            autocomplete="name"
+                            placeholder="Nhập họ tên hoặc tên mái ấm"
+                        />
+                        <InputError class="mt-1.5" :message="form.errors.name" />
+                    </div>
+
+                    <div>
+                        <InputLabel for="phone" value="Số điện thoại liên lạc" class="text-xs font-semibold text-gray-700" />
+                        <TextInput
+                            id="phone"
+                            type="text"
+                            class="mt-1.5 block w-full border-gray-200 focus:border-transparent focus:ring-2 focus:ring-emerald-500 rounded-xl bg-gray-50/30 text-sm py-2.5 px-4"
+                            v-model="form.phone"
+                            required
+                            placeholder="Nhập số điện thoại liên lạc"
+                        />
+                        <InputError class="mt-1.5" :message="form.errors.phone" />
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <InputLabel for="email" value="Địa chỉ Email" class="text-xs font-semibold text-gray-700" />
+                        <TextInput
+                            id="email"
+                            type="email"
+                            class="mt-1.5 block w-full border-gray-200 bg-gray-100 text-gray-500 rounded-xl text-sm py-2.5 px-4 cursor-not-allowed"
+                            v-model="form.email"
+                            required
+                            disabled
+                            autocomplete="username"
+                        />
+                        <InputError class="mt-1.5" :message="form.errors.email" />
+                    </div>
+                </div>
+            </div>
+
+            <!-- 3. Địa chỉ & Vị trí GPS -->
+            <div class="space-y-4 border-t border-gray-50 pt-6">
+                <span class="text-xs font-bold text-gray-500 uppercase tracking-wider block">
+                    📍 Địa chỉ & Bản đồ định vị GPS
+                </span>
+
+                <div>
+                    <InputLabel for="address" value="Địa chỉ chi tiết (Số nhà, tên đường, khu vực...)" class="text-xs font-semibold text-gray-700" />
+                    <TextInput
+                        id="address"
                         type="text"
-                        ref="mapSearchInput"
-                        class="flex-1 bg-white border border-gray-300 text-xs text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                        placeholder="Tìm kiếm địa điểm nhanh (Ví dụ: Chợ Bến Thành, Landmark 81...)"
-                        @keyup.enter="searchMapAddress"
+                        class="mt-1.5 block w-full border-gray-200 focus:border-transparent focus:ring-2 focus:ring-emerald-500 rounded-xl bg-gray-50/30 text-sm py-2.5 px-4"
+                        v-model="form.address"
+                        required
+                        placeholder="Ví dụ: 123 Đường Nguyễn Trãi, Phường 2, Quận 5..."
+                        @blur="geocodeAddress"
                     />
-                    <button
-                        type="button"
-                        @click="searchMapAddress"
-                        class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-xl px-4 py-2.5 shadow-sm transition"
-                    >
-                        Tìm vị trí
-                    </button>
+                    <InputError class="mt-1.5" :message="form.errors.address" />
                 </div>
 
-                <div ref="mapContainer" class="w-full h-80 rounded-2xl border border-gray-200 shadow-inner z-10"></div>
-                <p class="text-[10px] text-gray-400">Bạn có thể phóng to, thu nhỏ, kéo thả biểu tượng ghim hoặc click chuột bất kỳ đâu trên bản đồ để chọn tọa độ chính xác.</p>
+                <!-- Bản đồ tương tác ghim GPS -->
+                <div class="space-y-3">
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <input
+                            type="text"
+                            ref="mapSearchInput"
+                            class="flex-1 bg-white border border-gray-200 text-xs text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
+                            placeholder="Nhập địa điểm cần tìm nhanh (Chợ Bến Thành, Công viên Gia Định...)"
+                            @keyup.enter="searchMapAddress"
+                        />
+                        <div class="flex gap-2">
+                            <button
+                                type="button"
+                                @click="searchMapAddress"
+                                class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl px-4 py-2.5 shadow-sm transition duration-200 cursor-pointer"
+                            >
+                                Tìm vị trí
+                            </button>
+                            <button
+                                type="button"
+                                @click="getGeolocation"
+                                class="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 font-bold text-xs rounded-xl px-4 py-2.5 transition duration-200 flex items-center gap-1.5 cursor-pointer"
+                            >
+                                🎯 Định vị GPS của tôi
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Khung bản đồ -->
+                    <div ref="mapContainer" class="w-full h-80 rounded-2xl border border-gray-200 shadow-inner z-10"></div>
+                    <p class="text-[10.5px] text-gray-400 leading-normal">
+                        💡 Mẹo: Bạn có thể nhập địa điểm vào ô tìm kiếm hoặc kéo thả biểu tượng ghim màu xanh trên bản đồ để tự động cập nhật tọa độ chính xác.
+                    </p>
+                </div>
             </div>
 
-            <div>
-                <button
-                    type="button"
-                    @click="getGeolocation"
-                    class="text-xs bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 px-4 py-2 rounded-xl transition duration-200 font-semibold flex items-center gap-1.5"
-                >
-                    📍 Định vị lại tọa độ GPS hiện tại
-                </button>
-            </div>
-
-            <div v-if="mustVerifyEmail && user.email_verified_at === null">
-                <p class="mt-2 text-sm text-gray-800">
+            <!-- Email verification notice -->
+            <div v-if="mustVerifyEmail && user.email_verified_at === null" class="bg-amber-50 border border-amber-100 rounded-2xl p-4 text-xs text-amber-800 leading-normal">
+                <p>
                     Địa chỉ email của bạn chưa được xác thực.
                     <Link
                         :href="route('verification.send')"
                         method="post"
                         as="button"
-                        class="rounded-md text-sm text-gray-600 underline hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                        class="font-bold underline text-amber-900 hover:text-amber-950 focus:outline-none ml-1 cursor-pointer"
                     >
                         Bấm vào đây để gửi lại mã xác thực email.
                     </Link>
                 </p>
-
-                <div
-                    v-show="status === 'verification-link-sent'"
-                    class="mt-2 text-sm font-medium text-green-600"
-                >
+                <div v-show="status === 'verification-link-sent'" class="mt-2 font-bold text-emerald-700">
                     Mã xác thực mới đã được gửi tới hòm thư của bạn.
                 </div>
             </div>
 
-            <div class="flex items-center gap-4 pt-2">
-                <PrimaryButton :disabled="form.processing" class="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-xl text-xs py-2.5 px-4 shadow-md shadow-emerald-100 transition">Lưu thông tin</PrimaryButton>
+            <!-- Nút Lưu thông tin -->
+            <div class="flex items-center gap-4 pt-3 border-t border-gray-50">
+                <button 
+                    type="submit"
+                    :disabled="form.processing"
+                    class="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs py-3 px-6 shadow-md shadow-emerald-100 hover:shadow-emerald-200 transition duration-200 cursor-pointer flex items-center gap-2"
+                >
+                    <svg v-if="form.processing" class="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Lưu thay đổi
+                </button>
 
                 <Transition
-                    enter-active-class="transition ease-in-out"
-                    enter-from-class="opacity-0"
-                    leave-active-class="transition ease-in-out"
-                    leave-to-class="opacity-0"
+                    enter-active-class="transition ease-in-out duration-300"
+                    enter-from-class="opacity-0 translate-y-1"
+                    enter-to-class="opacity-100 translate-y-0"
+                    leave-active-class="transition ease-in-out duration-300"
+                    leave-to-class="opacity-0 translate-y-1"
                 >
-                    <p
-                        v-if="form.recentlySuccessful"
-                        class="text-xs text-emerald-600 font-semibold"
-                    >
-                        Lưu thông tin thành công.
+                    <p v-if="form.recentlySuccessful" class="text-xs text-emerald-600 font-bold flex items-center gap-1">
+                        ✨ Cập nhật hồ sơ thành công!
                     </p>
                 </Transition>
             </div>
         </form>
-    </section>
+    </div>
 </template>

@@ -27,10 +27,24 @@ class ProfileController extends Controller
             }
         }
 
+        $receivingClaims = \App\Models\FoodClaim::where('user_id', $user->id)
+            ->with(['foodPost.user'])
+            ->latest()
+            ->get();
+
+        $givingClaims = \App\Models\FoodClaim::whereHas('foodPost', function ($q) use ($user) {
+                $q->where('user_id', $user->id);
+            })
+            ->with(['user', 'foodPost'])
+            ->latest()
+            ->get();
+
         return Inertia::render('Profile/Edit', [
             'mustVerifyEmail' => $user instanceof MustVerifyEmail,
             'status' => session('status'),
             'charityDocuments' => $charityDocuments,
+            'receivingClaims' => $receivingClaims,
+            'givingClaims' => $givingClaims,
         ]);
     }
 

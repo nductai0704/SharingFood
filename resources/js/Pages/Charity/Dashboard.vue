@@ -262,6 +262,10 @@ const activeClaims = computed(() => {
     return myClaims.value.filter(claim => claim.status === 'pending' || claim.status === 'approved');
 });
 
+const approvedReceivedClaims = computed(() => {
+    return page.props.auth.receivedClaims ? page.props.auth.receivedClaims.filter(c => c.status === 'approved') : [];
+});
+
 const handleCancelClaim = (claimId) => {
     if (confirm('Bạn có chắc chắn muốn hủy yêu cầu nhận thực phẩm này?')) {
         router.post(route('food-claims.cancel', claimId), {}, {
@@ -337,13 +341,13 @@ const submitClaim = () => {
     <nav class="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
-          <div class="flex items-center space-x-3">
-            <div class="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md shadow-emerald-200">S</div>
-            <span class="text-xl font-bold text-gray-950 tracking-tight">ShareFood<span class="text-emerald-600">.vn</span></span>
+          <Link :href="route('charity.dashboard')" class="flex items-center space-x-3 group">
+            <div class="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md shadow-emerald-200 group-hover:scale-105 transition-transform duration-200">S</div>
+            <span class="text-xl font-bold text-gray-950 tracking-tight group-hover:text-emerald-600 transition-colors duration-200">ShareFood<span class="text-emerald-600">.vn</span></span>
             <span class="hidden sm:inline-block bg-emerald-100 text-emerald-800 text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full font-bold border border-emerald-200">
               Tổ Chức Từ Thiện
             </span>
-          </div>
+          </Link>
 
           <div class="hidden md:flex items-center space-x-6">
             <Link :href="route('charity.dashboard')" class="text-emerald-600 font-medium text-sm">Trang chủ</Link>
@@ -400,15 +404,15 @@ const submitClaim = () => {
                   
                   <div class="max-h-72 overflow-y-auto divide-y divide-gray-50">
                     <div 
-                      v-if="!$page.props.auth.receivedClaims || $page.props.auth.receivedClaims.length === 0" 
+                      v-if="pendingNotifications.length === 0" 
                       class="p-4 text-center text-gray-400 text-xs"
                     >
-                      Không có thông báo nào.
+                      Không có thông báo nào mới.
                     </div>
                     
                     <div 
                       v-else
-                      v-for="claim in $page.props.auth.receivedClaims" 
+                      v-for="claim in pendingNotifications" 
                       :key="claim.id"
                       class="p-3 hover:bg-gray-50/50 space-y-2 transition text-xs"
                     >
@@ -418,18 +422,6 @@ const submitClaim = () => {
                           đã xin nhận <span class="font-bold text-emerald-600">{{ claim.quantity }} {{ claim.food_post?.unit }}</span> 
                           từ bài viết <b>"{{ claim.food_post?.title }}"</b>
                         </p>
-                        <span 
-                          v-if="claim.status !== 'pending'" 
-                          :class="[
-                            claim.status === 'approved' ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : '',
-                            claim.status === 'completed' ? 'text-blue-600 bg-blue-50 border-blue-100' : '',
-                            claim.status === 'rejected' ? 'text-red-600 bg-red-50 border-red-100' : '',
-                            claim.status === 'cancelled' ? 'text-gray-500 bg-gray-50 border-gray-100' : '',
-                            'text-[9px] px-1.5 py-0.5 rounded border font-bold shrink-0'
-                          ]"
-                        >
-                          {{ claim.status === 'approved' ? 'Đã duyệt' : (claim.status === 'completed' ? 'Đã giao' : (claim.status === 'rejected' ? 'Từ chối' : (claim.status === 'cancelled' ? 'Đã hủy' : claim.status))) }}
-                        </span>
                       </div>
                       
                       <div class="flex justify-between items-center text-[10px] text-gray-400">
@@ -437,7 +429,7 @@ const submitClaim = () => {
                       </div>
 
                       <!-- Hành động phê duyệt / từ chối trong thông báo -->
-                      <div v-if="claim.status === 'pending'" class="flex items-center gap-2 pt-1">
+                      <div class="flex items-center gap-2 pt-1">
                         <button 
                           @click="handleUpdateClaimStatus(claim.id, 'approved')"
                           class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1 rounded-lg transition text-center cursor-pointer shadow-sm shadow-emerald-100 hover:shadow-emerald-200"
@@ -449,22 +441,6 @@ const submitClaim = () => {
                           class="flex-1 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 font-semibold text-[10px] py-1 rounded-lg border border-gray-200 hover:border-red-100 transition text-center cursor-pointer"
                         >
                           Từ chối
-                        </button>
-                      </div>
-
-                      <!-- Các nút thao tác khi đã duyệt (Chờ giao nhận) -->
-                      <div v-if="claim.status === 'approved'" class="flex items-center gap-2 pt-1">
-                        <button 
-                          @click="handleCompleteClaim(claim.id)" 
-                          class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1 rounded-lg transition text-center cursor-pointer shadow-sm shadow-emerald-100"
-                        >
-                          Đã lấy đồ
-                        </button>
-                        <button 
-                          @click="handleCancelClaim(claim.id)" 
-                          class="flex-1 bg-white hover:bg-red-50 text-red-600 hover:text-red-700 font-semibold text-[10px] py-1 rounded-lg border border-gray-200 hover:border-red-100 transition text-center cursor-pointer"
-                        >
-                          Hủy giao dịch
                         </button>
                       </div>
                     </div>
@@ -739,96 +715,126 @@ const submitClaim = () => {
             <div id="map" class="h-64 rounded-2xl border border-gray-100 z-10"></div>
           </div>
 
-          <!-- Yêu cầu nhận của bạn (Lịch sử nhận thực phẩm lẻ) -->
+          <!-- Yêu cầu & Giao nhận (Gồm cả bài cho & bài nhận đang hoạt động) -->
           <div v-if="$page.props.auth.user" class="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-4">
-            <div class="flex items-center justify-between border-b border-gray-100 pb-3">
-              <h3 class="font-bold text-gray-900 text-sm">Yêu cầu nhận của bạn</h3>
-              <span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold">
-                {{ activeClaims?.length || 0 }} tin
+            <div class="flex justify-between items-center border-b border-gray-50 pb-3">
+              <h3 class="font-bold text-gray-950 text-sm">Yêu cầu & Giao nhận</h3>
+              <span class="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded border border-emerald-100">
+                {{ activeClaims.length + approvedReceivedClaims.length }} giao dịch
               </span>
             </div>
             
-            <div v-if="activeClaims.length === 0" class="text-center py-6 text-gray-400 text-xs">
-              Không có yêu cầu nhận thực phẩm nào đang xử lý.
+            <div v-if="activeClaims.length === 0 && approvedReceivedClaims.length === 0" class="text-center py-6 text-gray-400 text-xs">
+              Không có giao dịch nào đang xử lý.
             </div>
             
-            <div v-else class="space-y-3 max-h-80 overflow-y-auto pr-1">
-              <div 
-                v-for="claim in activeClaims" 
-                :key="claim.id"
-                class="p-3 bg-gray-50 rounded-2xl border border-gray-100 space-y-2 text-xs"
-              >
-                <div class="flex justify-between items-start gap-2">
-                  <div class="font-bold text-gray-900 line-clamp-1 flex-1 text-left">
-                    {{ claim.food_post?.title || 'Thực phẩm đã xóa' }}
+            <div v-else class="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+              <!-- PHẦN 1: BÀI NHẬN (Yêu cầu bạn gửi đi xin người khác) -->
+              <div v-if="activeClaims.length > 0" class="space-y-2">
+                <div class="text-[10px] font-bold text-emerald-700 tracking-wider uppercase mb-1 flex items-center gap-1">
+                  📥 Yêu cầu xin nhận ({{ activeClaims.length }})
+                </div>
+                <div 
+                  v-for="claim in activeClaims" 
+                  :key="'outgoing-' + claim.id" 
+                  class="p-3 bg-emerald-50/20 rounded-2xl border border-emerald-100/30 space-y-2 text-xs"
+                >
+                  <div class="flex justify-between items-start gap-2">
+                    <div class="font-bold text-gray-900 line-clamp-1 flex-1 text-left">
+                      {{ claim.food_post?.title || 'Thực phẩm' }}
+                    </div>
+                    <span class="bg-emerald-50 text-emerald-700 border-emerald-100 text-[9px] px-1.5 py-0.5 rounded border font-bold shrink-0">
+                      {{ claim.status === 'pending' ? 'Chờ duyệt' : 'Đã duyệt' }}
+                    </span>
                   </div>
-                  <span 
-                    :class="[
-                      claim.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-100' : '',
-                      claim.status === 'approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : '',
-                      claim.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-100' : '',
-                      claim.status === 'cancelled' ? 'bg-gray-50 text-gray-500 border-gray-100' : '',
-                      claim.status === 'completed' ? 'bg-blue-50 text-blue-700 border-blue-100' : '',
-                      'text-[9px] px-1.5 py-0.5 rounded border font-bold shrink-0'
-                    ]"
-                  >
-                    {{ claim.status === 'pending' ? 'Chờ duyệt' : (claim.status === 'approved' ? 'Đã duyệt' : (claim.status === 'rejected' ? 'Từ chối' : (claim.status === 'cancelled' ? 'Đã hủy' : (claim.status === 'completed' ? 'Đã nhận đồ' : claim.status)))) }}
-                  </span>
-                </div>
-                
-                <div class="flex justify-between text-[11px] text-gray-500">
-                  <span>Số lượng yêu cầu:</span>
-                  <span class="font-semibold text-gray-800">{{ claim.quantity }} {{ claim.food_post?.unit }}</span>
-                </div>
+                  
+                  <div class="flex justify-between text-[11px] text-gray-500">
+                    <span>Số lượng yêu cầu:</span>
+                    <span class="font-semibold text-gray-800">{{ claim.quantity }} {{ claim.food_post?.unit }}</span>
+                  </div>
 
-                <div class="mt-2 pt-2 border-t border-gray-100/50 text-[11px] space-y-1 text-left">
-                  <!-- Trạng thái Chờ duyệt -->
-                  <div v-if="claim.status === 'pending'" class="text-amber-600 bg-amber-50/50 p-1.5 rounded-lg border border-amber-100/50 flex items-start gap-1">
-                    <span class="shrink-0 mt-0.5">⚠️</span>
-                    <span>Thông tin liên hệ sẽ hiển thị sau khi chủ nhà phê duyệt.</span>
-                  </div>
-                  <!-- Trạng thái Đã duyệt -->
-                  <div v-else-if="claim.status === 'approved'" class="bg-emerald-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1">
-                    <p>👤 <b>Người cho:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.name }}</span></p>
-                    <p>📞 <b>SĐT người cho:</b> <a :href="'tel:' + claim.food_post?.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ claim.food_post?.user?.phone || 'Chưa cập nhật' }}</a></p>
-                    <p>📍 <b>Địa chỉ lấy đồ:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.address || 'Chưa cập nhật' }}</span></p>
-                    <div class="pt-1.5 border-t border-emerald-100/50 mt-1.5">
-                      <button 
-                        @click="handleGetDirections(claim)"
-                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1 shadow-sm"
-                      >
-                        🗺️ Chỉ đường đến vị trí lấy đồ
-                      </button>
+                  <div class="mt-2 pt-2 border-t border-gray-100/50 text-[11px] space-y-1 text-left">
+                    <!-- Trạng thái Chờ duyệt -->
+                    <div v-if="claim.status === 'pending'" class="text-amber-600 bg-amber-50/50 p-1.5 rounded-lg border border-amber-100/50 flex items-start gap-1">
+                      <span class="shrink-0 mt-0.5">⚠️</span>
+                      <span>Thông tin liên hệ sẽ hiển thị sau khi chủ nhà phê duyệt.</span>
+                    </div>
+                    <!-- Trạng thái Đã duyệt -->
+                    <div v-else-if="claim.status === 'approved'" class="bg-emerald-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1">
+                      <p>👤 <b>Người cho:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.name }}</span></p>
+                      <p>📞 <b>SĐT người cho:</b> <a :href="'tel:' + claim.food_post?.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ claim.food_post?.user?.phone || 'Chưa cập nhật' }}</a></p>
+                      <p>📍 <b>Địa chỉ lấy đồ:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.address || 'Chưa cập nhật' }}</span></p>
+                      <div class="pt-1.5 border-t border-emerald-100/50 mt-1.5">
+                        <button 
+                          @click="handleGetDirections(claim)"
+                          class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                        >
+                          🗺️ Chỉ đường đến vị trí lấy đồ
+                        </button>
+                      </div>
                     </div>
                   </div>
 
-                  <!-- Trạng thái Đã nhận đồ / Hoàn thành giao dịch -->
-                  <div v-else-if="claim.status === 'completed'" class="bg-blue-50/30 p-2.5 rounded-xl text-gray-500 space-y-0.5 border border-blue-100/30">
-                    <p>🎉 <b>Lịch sử nhận:</b> Nhận thành công <span class="font-semibold text-gray-800">{{ claim.quantity }} {{ claim.food_post?.unit }}</span> món <span class="font-semibold text-gray-800">"{{ claim.food_post?.title || 'Thực phẩm' }}"</span> của <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.name || 'Người cho' }}</span>.</p>
-                  </div>
-
-                  <div v-else class="text-[10px] text-gray-400 italic">
-                    Giao dịch đã kết thúc ({{ claim.status === 'rejected' ? 'Từ chối' : 'Đã hủy' }}).
+                  <!-- Nút Hủy giao dịch (Cancel Claim) - Dành cho người nhận -->
+                  <div class="flex justify-end pt-1">
+                    <button 
+                      @click="handleCancelClaim(claim.id)" 
+                      class="bg-white hover:bg-red-50 text-red-600 hover:text-red-700 font-bold text-[10px] px-3 py-1.5 rounded-lg border border-gray-200 hover:border-red-100 transition cursor-pointer shadow-sm"
+                    >
+                      Hủy yêu cầu
+                    </button>
                   </div>
                 </div>
+              </div>
 
-                <!-- Nút Hủy giao dịch (Cancel Claim) - Dành cho người nhận -->
-                <div v-if="claim.status === 'pending' || claim.status === 'approved'" class="flex justify-end pt-1">
-                  <button 
-                    @click="handleCancelClaim(claim.id)" 
-                    class="bg-white hover:bg-red-50 text-red-600 hover:text-red-700 font-bold text-[10px] px-3 py-1.5 rounded-lg border border-gray-200 hover:border-red-100 transition cursor-pointer shadow-sm"
-                  >
-                    Hủy yêu cầu
-                  </button>
+              <!-- PHẦN 2: BÀI CHO (Yêu cầu nhận từ người khác mà bạn đã duyệt) -->
+              <div v-if="approvedReceivedClaims.length > 0" class="space-y-2 pt-2 border-t border-gray-100/50">
+                <div class="text-[10px] font-bold text-blue-700 tracking-wider uppercase mb-1 flex items-center gap-1">
+                  📤 Bài đăng cho đi (Đã duyệt) ({{ approvedReceivedClaims.length }})
                 </div>
+                <div 
+                  v-for="claim in approvedReceivedClaims" 
+                  :key="'incoming-' + claim.id" 
+                  class="p-3 bg-blue-50/20 rounded-2xl border border-blue-100/30 space-y-2 text-xs"
+                >
+                  <div class="flex justify-between items-start gap-2">
+                    <div class="font-bold text-gray-900 line-clamp-1 flex-1 text-left">
+                      {{ claim.food_post?.title || 'Thực phẩm' }}
+                    </div>
+                    <span class="bg-blue-50 text-blue-700 border-blue-100 text-[9px] px-1.5 py-0.5 rounded border font-bold shrink-0">
+                      Chờ lấy đồ
+                    </span>
+                  </div>
 
-                <div class="text-[10px] text-gray-400 text-left">
-                  Gửi lúc: {{ new Date(claim.created_at).toLocaleString('vi-VN') }}
+                  <p class="text-gray-700 leading-normal text-left text-[11px]">
+                    👤 Người xin: <span class="font-bold text-gray-900">{{ claim.user?.name }}</span> xin <span class="font-bold text-emerald-600">{{ claim.quantity }} {{ claim.food_post?.unit }}</span>
+                  </p>
+                  
+                  <div class="bg-gray-50 p-2 rounded-xl text-gray-600 text-[11px] space-y-0.5 text-left">
+                    <p>📞 <b>SĐT người xin:</b> <a :href="'tel:' + claim.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ claim.user?.phone || 'Chưa cập nhật' }}</a></p>
+                    <p>📍 <b>Địa chỉ:</b> <span class="font-semibold text-gray-800">{{ claim.user?.address || 'Chưa cập nhật' }}</span></p>
+                  </div>
+
+                  <!-- Các nút thao tác dành cho người cho để kết thúc giao dịch -->
+                  <div class="flex items-center gap-2 pt-1">
+                    <button 
+                      @click="handleCompleteClaim(claim.id)" 
+                      class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition text-center cursor-pointer shadow-sm shadow-emerald-100"
+                    >
+                      Đã lấy đồ
+                    </button>
+                    <button 
+                      @click="handleCancelClaim(claim.id)" 
+                      class="flex-1 bg-white hover:bg-red-50 text-red-600 hover:text-red-700 font-semibold text-[10px] py-1.5 rounded-lg border border-gray-200 hover:border-red-100 transition text-center cursor-pointer"
+                    >
+                      Hủy giao dịch
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+          </div>
       </div>
     </main>
 
