@@ -355,23 +355,53 @@ const handleSubmit = () => {
               </div>
 
               <!-- Nhóm nút quản lý bài đăng -->
-              <div class="flex gap-2 w-full">
-                <button 
-                  v-if="post.ai_status === 'safe'"
-                  @click="(post.status === 'available' && new Date(post.expires_at) > currentTime) ? handleToggleStatus(post.id) : openEditModal(post)"
-                  :class="(post.status === 'available' && new Date(post.expires_at) > currentTime) ? 'bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 border-gray-200 hover:border-red-200' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'"
-                  class="flex-1 font-bold text-xs py-2.5 px-3 rounded-xl transition border text-center cursor-pointer"
-                >
-                  {{ (post.status === 'available' && new Date(post.expires_at) > currentTime) ? '🛑 Tạm ẩn' : '✅ Gia hạn' }}
-                </button>
-                
+              <div class="space-y-2 w-full pt-1">
+                <!-- Dòng 1: Nút hành động chính và Chỉnh sửa -->
+                <div class="flex gap-2 w-full">
+                  <!-- Nếu bài viết an toàn & đang hoạt động -->
+                  <template v-if="post.ai_status === 'safe' && post.status === 'available' && new Date(post.expires_at) > currentTime">
+                    <button 
+                      @click="handleToggleStatus(post.id)"
+                      class="flex-1 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 border border-gray-200 hover:border-red-200 font-bold text-xs py-2.5 px-3 rounded-xl transition text-center cursor-pointer"
+                    >
+                      🛑 Tạm ẩn
+                    </button>
+                    <button 
+                      @click="openEditModal(post)"
+                      class="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs py-2.5 px-3 rounded-xl transition text-center cursor-pointer"
+                    >
+                      ✏️ Sửa tin
+                    </button>
+                  </template>
+
+                  <!-- Nếu bài viết an toàn & hết hạn / đã tạm ẩn -->
+                  <template v-else-if="post.ai_status === 'safe'">
+                    <button 
+                      @click="openEditModal(post)"
+                      class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition text-center cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+                    >
+                      ✅ Gia hạn & Chỉnh sửa
+                    </button>
+                  </template>
+
+                  <!-- Nếu bài viết vi phạm kiểm duyệt (Flagged) -->
+                  <template v-else-if="post.ai_status === 'flagged'">
+                    <button 
+                      @click="openEditModal(post)"
+                      class="w-full bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-bold text-xs py-2.5 px-4 rounded-xl transition text-center cursor-pointer flex items-center justify-center gap-1.5"
+                    >
+                      ✏️ Sửa & Gửi duyệt lại
+                    </button>
+                  </template>
+                </div>
+
+                <!-- Dòng 2: Nút Gỡ tin (Xóa) -->
                 <button 
                   @click="handleDeletePost(post.id)"
-                  :class="post.ai_status === 'safe' ? 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 rounded-xl transition text-center cursor-pointer flex items-center justify-center gap-1 shrink-0' : 'w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2.5 rounded-xl transition text-center cursor-pointer flex items-center justify-center gap-1'"
-                  class="font-bold text-xs py-2.5"
-                  title="Gỡ bài đăng"
+                  class="w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 font-bold text-xs py-2.5 rounded-xl transition text-center cursor-pointer flex items-center justify-center gap-1"
+                  title="Gỡ bài đăng hoàn toàn"
                 >
-                  🗑️ Gỡ tin
+                  🗑️ Gỡ tin đăng
                 </button>
               </div>
 
