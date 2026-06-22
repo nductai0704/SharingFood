@@ -258,6 +258,10 @@ watch(() => props.dbMyClaims, (newVal) => {
     myClaims.value = [...(newVal || [])];
 }, { deep: true });
 
+const activeClaims = computed(() => {
+    return myClaims.value.filter(claim => claim.status === 'pending' || claim.status === 'approved');
+});
+
 const handleCancelClaim = (claimId) => {
     if (confirm('Bạn có chắc chắn muốn hủy yêu cầu nhận thực phẩm này?')) {
         router.post(route('food-claims.cancel', claimId), {}, {
@@ -740,17 +744,17 @@ const submitClaim = () => {
             <div class="flex items-center justify-between border-b border-gray-100 pb-3">
               <h3 class="font-bold text-gray-900 text-sm">Yêu cầu nhận của bạn</h3>
               <span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-full text-[10px] font-bold">
-                {{ myClaims?.length || 0 }} tin
+                {{ activeClaims?.length || 0 }} tin
               </span>
             </div>
             
-            <div v-if="myClaims.length === 0" class="text-center py-6 text-gray-400 text-xs">
-              Bạn chưa gửi yêu cầu xin nhận thực phẩm nào.
+            <div v-if="activeClaims.length === 0" class="text-center py-6 text-gray-400 text-xs">
+              Không có yêu cầu nhận thực phẩm nào đang xử lý.
             </div>
             
             <div v-else class="space-y-3 max-h-80 overflow-y-auto pr-1">
               <div 
-                v-for="claim in myClaims" 
+                v-for="claim in activeClaims" 
                 :key="claim.id"
                 class="p-3 bg-gray-50 rounded-2xl border border-gray-100 space-y-2 text-xs"
               >
