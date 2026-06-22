@@ -269,6 +269,25 @@ const handleCancelClaim = (claimId) => {
     }
 };
 
+const handleGetDirections = (claim) => {
+    if (!claim.food_post) {
+        alert('Không tìm thấy thông tin bài viết thực phẩm.');
+        return;
+    }
+    const origin = `${userLat.value},${userLng.value}`;
+    let destination = '';
+    if (claim.food_post.latitude && claim.food_post.longitude) {
+        destination = `${claim.food_post.latitude},${claim.food_post.longitude}`;
+    } else if (claim.food_post.user && claim.food_post.user.address) {
+        destination = encodeURIComponent(claim.food_post.user.address);
+    } else {
+        alert('Không tìm thấy tọa độ hoặc địa chỉ của bài viết này.');
+        return;
+    }
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+    window.open(url, '_blank');
+};
+
 const handleCompleteClaim = (claimId) => {
     if (confirm('Bạn có chắc chắn muốn xác nhận đã giao xong thực phẩm này cho người nhận?')) {
         router.post(route('food-claims.complete', claimId), {}, {
@@ -764,11 +783,26 @@ const submitClaim = () => {
                     <span class="shrink-0 mt-0.5">⚠️</span>
                     <span>Thông tin liên hệ sẽ hiển thị sau khi chủ nhà phê duyệt.</span>
                   </div>
-                  <!-- Trạng thái Đã duyệt / Hoàn thành -->
-                  <div v-else-if="claim.status === 'approved' || claim.status === 'completed'" class="bg-emerald-50/50 p-2 rounded-xl text-gray-600 space-y-0.5">
+                  <!-- Trạng thái Đã duyệt -->
+                  <div v-else-if="claim.status === 'approved'" class="bg-emerald-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1">
+                    <p>👤 <b>Người cho:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.name }}</span></p>
                     <p>📞 <b>SĐT người cho:</b> <a :href="'tel:' + claim.food_post?.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ claim.food_post?.user?.phone || 'Chưa cập nhật' }}</a></p>
                     <p>📍 <b>Địa chỉ lấy đồ:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.address || 'Chưa cập nhật' }}</span></p>
+                    <div class="pt-1.5 border-t border-emerald-100/50 mt-1.5">
+                      <button 
+                        @click="handleGetDirections(claim)"
+                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                      >
+                        🗺️ Chỉ đường đến vị trí lấy đồ
+                      </button>
+                    </div>
                   </div>
+
+                  <!-- Trạng thái Đã nhận đồ / Hoàn thành giao dịch -->
+                  <div v-else-if="claim.status === 'completed'" class="bg-blue-50/30 p-2.5 rounded-xl text-gray-500 space-y-0.5 border border-blue-100/30">
+                    <p>🎉 <b>Lịch sử nhận:</b> Nhận thành công <span class="font-semibold text-gray-800">{{ claim.quantity }} {{ claim.food_post?.unit }}</span> món <span class="font-semibold text-gray-800">"{{ claim.food_post?.title || 'Thực phẩm' }}"</span> của <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.name || 'Người cho' }}</span>.</p>
+                  </div>
+
                   <div v-else class="text-[10px] text-gray-400 italic">
                     Giao dịch đã kết thúc ({{ claim.status === 'rejected' ? 'Từ chối' : 'Đã hủy' }}).
                   </div>
