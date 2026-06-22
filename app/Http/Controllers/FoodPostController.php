@@ -380,4 +380,134 @@ class FoodPostController extends Controller
             return redirect()->back()->with('error', 'Lỗi khi xác nhận hoàn thành: ' . $e->getMessage());
         }
     }
+
+    /**
+     * Gỡ bài đăng tặng thực phẩm (Xóa mềm - Chuyển sang trạng thái 'deleted' và hủy các yêu cầu liên quan)
+     */
+    public function destroy(FoodPost $post)
+    {
+        if ($post->user_id !== auth()->id()) {
+            abort(403);
+        }
+
+        \DB::transaction(function() use ($post) {
+            // 1. Chuyển trạng thái bài đăng sang 'hidden' (ẩn đi hoàn toàn)
+            $post->status = 'hidden';
+            $post->save();
+
+            // 2. Tự động hủy các yêu cầu nhận đang ở trạng thái 'pending' hoặc 'approved'
+            $claimsToCancel = $post->claims()
+                ->whereIn('status', ['pending', 'approved'])
+                ->get();
+
+            foreach ($claimsToCancel as $claim) {
+                $claim->status = 'cancelled';
+                $claim->save();
+
+                // Nhật ký hệ thống cho mỗi claim bị hủy
+                \App\Models\SystemLog::create([
+                    'action' => 'Hủy yêu cầu do gỡ bài',
+                    'description' => "Yêu cầu nhận của người dùng " . ($claim->user ? $claim->user->name : 'Người dùng') . " đã bị tự động hủy do chủ bài viết gỡ tin đăng \"{$post->title}\"",
+                    'user_id' => auth()->id(),
+                    'ip_address' => request()->ip(),
+                    'created_at' => now()
+                ]);
+            }
+
+            // Nhật ký hệ thống khi gỡ bài viết
+            \App\Models\SystemLog::create([
+                'action' => 'Gỡ bài đăng thực phẩm',
+                'description' => "Người dùng " . auth()->user()->name . " đã gỡ bài đăng \"{$post->title}\"",
+                'user_id' => auth()->id(),
+                'ip_address' => request()->ip(),
+                'created_at' => now()
+            ]);
+        });
+
+        return redirect()->back()->with('success', 'Gỡ bài đăng thực phẩm và hủy các yêu cầu liên quan thành công!');
+    }
+
+    /**
+     * Cập nhật và gia hạn bài đăng thực phẩm
+     */
+    public function update(Request $request, FoodPost $post)
+    {
+        if ($post->user_id !== auth()->id()) {
+            abort(403);
+        }
+
+        $validated = $request->validate([
+            'title' => 'required|string|max:255',
+            'category_id' => 'required|exists:categories,id,is_allowed,1',
+            'original_quantity' => 'required|integer|min:1',
+            'unit' => 'required|string|max:50',
+            'description' => 'required|string',
+            'expires_at' => 'required|date|after:now',
+            'image' => 'nullable|image|max:2048',
+        ], [
+            'title.required' => 'Vui lòng nhập tên món ăn / thực phẩm.',
+            'title.max' => 'Tên món ăn không được vượt quá 255 ký tự.',
+            'category_id.required' => 'Vui lòng chọn danh mục thực phẩm.',
+            'category_id.exists' => 'Danh mục đã chọn không hợp lệ hoặc không an toàn.',
+            'original_quantity.required' => 'Vui lòng nhập số lượng.',
+            'original_quantity.integer' => 'Số lượng phải là một số nguyên.',
+            'original_quantity.min' => 'Số lượng tối thiểu phải là 1.',
+            'unit.required' => 'Vui lòng nhập đơn vị tính.',
+            'description.required' => 'Vui lòng nhập mô tả chi tiết.',
+            'expires_at.required' => 'Vui lòng nhập hạn sử dụng mới.',
+            'expires_at.date' => 'Hạn sử dụng không đúng định dạng ngày giờ.',
+            'expires_at.after' => 'Hạn sử dụng phải ở thời gian tương lai.',
+            'image.image' => 'File tải lên phải là hình ảnh.',
+            'image.max' => 'Kích thước hình ảnh tối đa là 2MB.',
+        ]);
+
+        $imageUrl = $post->image_url;
+        $imageChanged = false;
+
+        if ($request->hasFile('image')) {
+            // Upload file ảnh mới
+            $path = $request->file('image')->store('food_posts', 'public');
+            $imageUrl = '/storage/' . $path;
+            $imageChanged = true;
+        }
+
+        $user = auth()->user();
+        // Cập nhật thông tin bài đăng
+        $post->fill([
+            'category_id' => $validated['category_id'],
+            'title' => $validated['title'],
+            'description' => $validated['description'],
+            'original_quantity' => $validated['original_quantity'],
+            'remain_quantity' => $validated['original_quantity'], // Reset remain quantity when updated/renewed
+            'unit' => $validated['unit'],
+            'image_url' => $imageUrl,
+            'expires_at' => $validated['expires_at'],
+            'status' => 'available', // Kích hoạt hiển thị lại khi gia hạn
+            'latitude' => $user->latitude, // Cập nhật vị trí hiện tại của người đăng
+            'longitude' => $user->longitude, // Cập nhật vị trí hiện tại của người đăng
+            'created_at' => now(), // Cập nhật thời gian đăng bài thành thời điểm gia hạn hiện tại
+        ]);
+
+        if ($imageChanged) {
+            $post->ai_status = 'unchecked'; // Chờ duyệt lại ảnh mới
+        }
+
+        $post->save();
+
+        if ($imageChanged) {
+            // Chạy kiểm duyệt ảnh bằng AI bất đồng bộ
+            \App\Jobs\ModerateFoodPostImage::dispatch($post);
+        }
+
+        // Ghi nhật ký hệ thống
+        \App\Models\SystemLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'UPDATE_FOOD_POST',
+            'description' => "Người dùng " . auth()->user()->name . " đã cập nhật và gia hạn bài đăng thực phẩm \"{$post->title}\" (ID: {$post->id})." . ($imageChanged ? " Đang chờ AI duyệt lại ảnh mới." : ""),
+            'ip_address' => $request->ip(),
+            'created_at' => now()
+        ]);
+
+        return redirect()->back()->with('success', 'Cập nhật và gia hạn thực phẩm thành công!' . ($imageChanged ? ' Ảnh mới đang được kiểm duyệt ngầm bởi AI.' : ''));
+    }
 }

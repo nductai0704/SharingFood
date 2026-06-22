@@ -57,7 +57,8 @@ class ModerateFoodPostImage implements ShouldQueue
         if ($result['is_safe']) {
             $post->update([
                 'ai_status' => 'safe',
-                'status' => 'available' // Kích hoạt hiển thị ra bản đồ
+                'status' => 'available', // Kích hoạt hiển thị ra bản đồ
+                'moderation_reason' => $result['reason']
             ]);
             Log::info("Food Post ID {$post->id} image moderated as SAFE. Post is now available.");
 
@@ -72,7 +73,8 @@ class ModerateFoodPostImage implements ShouldQueue
         } else {
             $post->update([
                 'ai_status' => 'flagged',
-                'status' => 'hidden' // Ẩn bài đăng khỏi bản đồ
+                'status' => 'hidden', // Ẩn bài đăng khỏi bản đồ
+                'moderation_reason' => $result['reason']
             ]);
             Log::warning("Food Post ID {$post->id} image moderated as UNSAFE. Post is hidden. Reason: " . $result['reason']);
 

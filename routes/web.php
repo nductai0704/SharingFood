@@ -34,8 +34,12 @@ Route::get('/food-posts', function () {
     // 1. Truy vấn danh sách categories có is_allowed = 1
     $dbCategories = DB::table('categories')->where('is_allowed', 1)->get();
     
-    // 2. Truy vấn danh sách food_posts của user đang đăng nhập cùng các yêu cầu xin nhận thực tế
+    // 2. Truy vấn danh sách food_posts của user đang đăng nhập cùng các yêu cầu xin nhận thực tế (bỏ qua tin đã xóa)
     $dbFoodPosts = FoodPost::where('user_id', auth()->id())
+        ->where(function ($query) {
+            $query->where('status', '!=', 'hidden')
+                  ->orWhere('ai_status', 'flagged');
+        })
         ->with(['claims.user'])
         ->get();
 
@@ -48,6 +52,8 @@ Route::get('/food-posts', function () {
 
 Route::post('/food-posts', [FoodPostController::class, 'store'])->middleware('auth')->name('food-posts.store');
 Route::post('/food-posts/{post}/toggle-status', [FoodPostController::class, 'toggleStatus'])->middleware('auth')->name('food-posts.toggle-status');
+Route::post('/food-posts/{post}', [FoodPostController::class, 'update'])->middleware('auth')->name('food-posts.update');
+Route::delete('/food-posts/{post}', [FoodPostController::class, 'destroy'])->middleware('auth')->name('food-posts.destroy');
 Route::post('/food-posts/{post}/claim', [FoodPostController::class, 'claim'])->middleware('auth')->name('food-posts.claim');
 Route::post('/food-claims/{claim}/status', [FoodPostController::class, 'updateClaimStatus'])->middleware('auth')->name('food-claims.status');
 Route::post('/food-claims/{claim}/cancel', [FoodPostController::class, 'cancelClaim'])->middleware('auth')->name('food-claims.cancel');

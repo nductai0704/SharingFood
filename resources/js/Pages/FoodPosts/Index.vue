@@ -25,13 +25,19 @@ onMounted(() => {
 
 const activePosts = computed(() => {
     return foodPosts.value.filter(post => {
-        return post.status === 'available' && new Date(post.expires_at) > currentTime.value;
+        return post.ai_status !== 'flagged' && post.status === 'available' && new Date(post.expires_at) > currentTime.value;
     });
 });
 
 const inactivePosts = computed(() => {
     return foodPosts.value.filter(post => {
-        return post.status !== 'available' || new Date(post.expires_at) <= currentTime.value;
+        return post.ai_status !== 'flagged' && (post.status !== 'available' || new Date(post.expires_at) <= currentTime.value);
+    });
+});
+
+const flaggedPosts = computed(() => {
+    return foodPosts.value.filter(post => {
+        return post.ai_status === 'flagged';
     });
 });
 
@@ -39,6 +45,14 @@ const handleToggleStatus = (postId) => {
     router.post(route('food-posts.toggle-status', postId), {}, {
         preserveScroll: true
     });
+};
+
+const handleDeletePost = (postId) => {
+    if (confirm('Bạn có chắc chắn muốn gỡ bài đăng thực phẩm này không? Hệ thống sẽ tự động hủy các yêu cầu nhận liên quan chưa hoàn thành.')) {
+        router.delete(route('food-posts.destroy', postId), {
+            preserveScroll: true
+        });
+    }
 };
 
 // Polling tự động làm mới danh sách khi có tin đăng đang chờ AI kiểm duyệt ngầm
@@ -97,6 +111,47 @@ const form = useForm({
     image: null, // Lưu trữ File object thực tế để upload ảnh
     expires_at: '',
 });
+
+// Chức năng Chỉnh sửa & Gia hạn bài đăng
+const isEditModalOpen = ref(false);
+const editForm = useForm({
+    id: '',
+    title: '',
+    category_id: '',
+    description: '',
+    original_quantity: '',
+    unit: '',
+    image: null,
+    expires_at: '',
+});
+
+const openEditModal = (post) => {
+    editForm.id = post.id;
+    editForm.title = post.title;
+    editForm.category_id = post.category_id;
+    editForm.description = post.description;
+    editForm.original_quantity = post.original_quantity;
+    editForm.unit = post.unit;
+    editForm.image = null; // Giữ trống trừ khi tải ảnh mới
+    if (post.expires_at) {
+        const date = new Date(post.expires_at);
+        const localISO = new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        editForm.expires_at = localISO;
+    } else {
+        editForm.expires_at = '';
+    }
+    isEditModalOpen.value = true;
+};
+
+const handleUpdate = () => {
+    editForm.post(route('food-posts.update', editForm.id), {
+        forceFormData: true,
+        onSuccess: () => {
+            isEditModalOpen.value = false;
+        },
+    });
+};
+
 // Hàm hỗ trợ tìm tên danh mục từ ID
 const getCategoryName = (catId) => {
     const category = categories.value.find(c => c.id === Number(catId));
@@ -104,7 +159,6 @@ const getCategoryName = (catId) => {
 };
 
 
-// 3. Hàm xử lý gửi form lên Backend
 // 3. Hàm xử lý gửi form lên Backend
 const handleSubmit = () => {
     form.post(route('food-posts.store'), {
@@ -186,12 +240,29 @@ const handleSubmit = () => {
             {{ inactivePosts.length }}
           </span>
         </button>
+        <button 
+          @click="activeManageTab = 'flagged'"
+          :class="[
+            activeManageTab === 'flagged' 
+              ? 'border-red-500 text-red-600 font-bold' 
+              : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+          ]"
+          class="pb-4 border-b-2 text-sm font-semibold transition duration-200 cursor-pointer flex items-center gap-2"
+        >
+          ⚠️ Vi phạm kiểm duyệt
+          <span 
+            :class="activeManageTab === 'flagged' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-600'" 
+            class="text-[10px] px-2 py-0.5 rounded-full font-bold"
+          >
+            {{ flaggedPosts.length }}
+          </span>
+        </button>
       </div>
 
       <!-- Danh sách bài đăng dạng lưới thẻ (Grid Cards) -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-start">
         <div 
-          v-for="post in (activeManageTab === 'active' ? activePosts : inactivePosts)" 
+          v-for="post in (activeManageTab === 'active' ? activePosts : (activeManageTab === 'inactive' ? inactivePosts : flaggedPosts))" 
           :key="post.id" 
           class="bg-white border border-gray-100 rounded-3xl overflow-hidden shadow-sm hover:shadow-md transition duration-200 flex flex-col group"
         >
@@ -221,9 +292,18 @@ const handleSubmit = () => {
               <h3 class="font-bold text-gray-950 text-base leading-snug group-hover:text-emerald-600 transition duration-200 line-clamp-1">
                 {{ post.title }}
               </h3>
+              <p class="text-[11px] text-gray-400">
+                Đăng lúc: {{ new Date(post.created_at).toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit', year: 'numeric' }) }}
+              </p>
               <p class="text-xs text-gray-500 line-clamp-2 h-8 leading-relaxed">
                 {{ post.description }}
               </p>
+
+              <!-- Hiển thị lý do vi phạm nếu bài viết bị gắn cờ -->
+              <div v-if="post.ai_status === 'flagged'" class="mt-2 p-3 bg-red-50 border border-red-100 rounded-2xl text-[11px] text-red-700 space-y-1">
+                <span class="font-extrabold uppercase text-[9px] tracking-wider block text-red-800">⚠️ Lý do vi phạm:</span>
+                <p class="leading-relaxed font-medium">{{ post.moderation_reason || 'Hình ảnh không phù hợp với tiêu chuẩn an toàn thực phẩm.' }}</p>
+              </div>
 
               <!-- Grid thông tin Số lượng & Hạn dùng -->
               <div class="pt-2 grid grid-cols-2 gap-3 border-t border-gray-50">
@@ -274,14 +354,26 @@ const handleSubmit = () => {
                 </div>
               </div>
 
-              <!-- Nút chuyển đổi trạng thái hiển thị của bài đăng thực tế -->
-              <button 
-                @click="handleToggleStatus(post.id)"
-                :class="(post.status === 'available' && new Date(post.expires_at) > currentTime) ? 'bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 border-gray-200 hover:border-red-200' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'"
-                class="w-full font-bold text-xs py-2.5 px-4 rounded-xl transition border text-center cursor-pointer"
-              >
-                {{ (post.status === 'available' && new Date(post.expires_at) > currentTime) ? '🛑 Tạm dừng hiển thị' : '✅ Gia hạn & Kích hoạt' }}
-              </button>
+              <!-- Nhóm nút quản lý bài đăng -->
+              <div class="flex gap-2 w-full">
+                <button 
+                  v-if="post.ai_status === 'safe'"
+                  @click="(post.status === 'available' && new Date(post.expires_at) > currentTime) ? handleToggleStatus(post.id) : openEditModal(post)"
+                  :class="(post.status === 'available' && new Date(post.expires_at) > currentTime) ? 'bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 border-gray-200 hover:border-red-200' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'"
+                  class="flex-1 font-bold text-xs py-2.5 px-3 rounded-xl transition border text-center cursor-pointer"
+                >
+                  {{ (post.status === 'available' && new Date(post.expires_at) > currentTime) ? '🛑 Tạm ẩn' : '✅ Gia hạn' }}
+                </button>
+                
+                <button 
+                  @click="handleDeletePost(post.id)"
+                  :class="post.ai_status === 'safe' ? 'bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-4 rounded-xl transition text-center cursor-pointer flex items-center justify-center gap-1 shrink-0' : 'w-full bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 py-2.5 rounded-xl transition text-center cursor-pointer flex items-center justify-center gap-1'"
+                  class="font-bold text-xs py-2.5"
+                  title="Gỡ bài đăng"
+                >
+                  🗑️ Gỡ tin
+                </button>
+              </div>
 
               <!-- Danh sách người đăng ký nhận -->
               <div v-if="post.claims && post.claims.length > 0" class="mt-4 pt-4 border-t border-gray-100 space-y-3">
@@ -333,6 +425,11 @@ const handleSubmit = () => {
         <!-- Trống dữ liệu cho Tab Hết hạn & Tạm ẩn -->
         <div v-if="activeManageTab === 'inactive' && inactivePosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-300 rounded-3xl p-12 text-center text-gray-400 text-sm">
           Không có thực phẩm nào đã hết hạn hoặc tạm ẩn.
+        </div>
+
+        <!-- Trống dữ liệu cho Tab Vi phạm kiểm duyệt -->
+        <div v-if="activeManageTab === 'flagged' && flaggedPosts.length === 0" class="col-span-full bg-white border border-dashed border-gray-300 rounded-3xl p-12 text-center text-gray-400 text-sm">
+          Không có bài đăng nào bị vi phạm kiểm duyệt hình ảnh.
         </div>
       </div>
 
@@ -475,6 +572,148 @@ const handleSubmit = () => {
                 class="w-2/3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm py-3 px-4 rounded-xl transition duration-200 shadow-sm shadow-emerald-100"
               >
                 Đăng tặng thực phẩm
+              </button>
+            </div>
+
+          </form>
+        </div>
+      </div>
+
+      <!-- MODAL CHỈNH SỬA & GIA HẠN THỰC PHẨM -->
+      <div 
+        v-if="isEditModalOpen" 
+        class="fixed inset-0 bg-gray-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      >
+        <!-- Khung Form nổi -->
+        <div class="bg-white rounded-3xl border border-gray-100 shadow-xl p-6 sm:p-8 space-y-6 max-w-2xl w-full relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+          
+          <!-- Nút Đóng góc trên bên phải -->
+          <button 
+            @click="isEditModalOpen = false" 
+            class="absolute top-5 right-5 text-gray-400 hover:text-gray-600 transition"
+          >
+            <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+
+          <div>
+            <h2 class="text-xl font-bold text-gray-950 tracking-tight">Chỉnh sửa & Gia hạn bài đăng</h2>
+            <p class="text-xs text-gray-500 mt-1">Cập nhật thông tin thực phẩm và thiết lập hạn sử dụng mới để kích hoạt lại bài đăng.</p>
+          </div>
+
+          <form @submit.prevent="handleUpdate" class="space-y-6">
+
+            <!-- 1. Tiêu đề bài đăng (Tên món ăn) -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-700">Tên món ăn / Thực phẩm <span class="text-red-500">*</span></label>
+              <input 
+                type="text" 
+                v-model="editForm.title"
+                :class="editForm.errors.title ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                placeholder="Ví dụ: Bánh bao chay, cơm gà xối mỡ..."
+              />
+              <p v-if="editForm.errors.title" class="text-red-500 text-[11px] font-semibold mt-1">{{ editForm.errors.title }}</p>
+            </div>
+
+            <!-- Grid 2 cột -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <!-- 2. Danh mục thực phẩm -->
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-gray-700">Danh mục <span class="text-red-500">*</span></label>
+                <select 
+                  v-model="editForm.category_id"
+                  :class="editForm.errors.category_id ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                  class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                >
+                  <option value="" disabled>-- Chọn danh mục --</option>
+                  <option v-for="cat in categories" :key="cat.id" :value="cat.id">
+                    {{ cat.name }}
+                  </option>
+                </select>
+                <p v-if="editForm.errors.category_id" class="text-red-500 text-[11px] font-semibold mt-1">{{ editForm.errors.category_id }}</p>
+              </div>
+
+              <!-- 3. Hạn sử dụng -->
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-gray-700">Hạn sử dụng mới <span class="text-red-500">*</span></label>
+                <input 
+                    type="datetime-local" 
+                    v-model="editForm.expires_at"
+                    :class="editForm.errors.expires_at ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                    class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                />
+                <p v-if="editForm.errors.expires_at" class="text-red-500 text-[11px] font-semibold mt-1">{{ editForm.errors.expires_at }}</p>
+              </div>
+
+              <!-- 4. Số lượng ban đầu -->
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-gray-700">Số lượng <span class="text-red-500">*</span></label>
+                <input 
+                  type="number" 
+                  v-model.number="editForm.original_quantity"
+                  min="1"
+                  :class="editForm.errors.original_quantity ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                  class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                  placeholder="Ví dụ: 5, 10..."
+                />
+                <p v-if="editForm.errors.original_quantity" class="text-red-500 text-[11px] font-semibold mt-1">{{ editForm.errors.original_quantity }}</p>
+              </div>
+
+              <!-- 5. Đơn vị tính -->
+              <div class="space-y-1.5">
+                <label class="text-xs font-semibold text-gray-700">Đơn vị tính <span class="text-red-500">*</span></label>
+                <input 
+                  type="text" 
+                  v-model="editForm.unit"
+                  :class="editForm.errors.unit ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                  class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                  placeholder="Ví dụ: suất, hộp, cái, kg..."
+                />
+                <p v-if="editForm.errors.unit" class="text-red-500 text-[11px] font-semibold mt-1">{{ editForm.errors.unit }}</p>
+              </div>
+            </div>
+
+            <!-- 6. Mô tả chi tiết -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-700">Mô tả chi tiết <span class="text-red-500">*</span></label>
+              <textarea 
+                v-model="editForm.description"
+                rows="3"
+                :class="editForm.errors.description ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                placeholder="Mô tả tình trạng thực phẩm..."
+              ></textarea>
+              <p v-if="editForm.errors.description" class="text-red-500 text-[11px] font-semibold mt-1">{{ editForm.errors.description }}</p>
+            </div>
+
+            <!-- 7. Hình ảnh minh họa -->
+            <div class="space-y-1.5">
+              <label class="text-xs font-semibold text-gray-700">Thay đổi hình ảnh thực tế (Để trống nếu giữ nguyên ảnh cũ)</label>
+              <input 
+                type="file" 
+                accept="image/*"
+                @change="(e) => editForm.image = e.target.files[0]"
+                class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-emerald-50 file:text-emerald-700 hover:file:bg-emerald-100 transition cursor-pointer"
+              />
+              <p v-if="editForm.errors.image" class="text-red-500 text-[11px] font-semibold mt-1">{{ editForm.errors.image }}</p>
+            </div>
+
+            <!-- Nút gửi -->
+            <div class="pt-4 flex gap-3">
+              <button 
+                type="button" 
+                @click="isEditModalOpen = false" 
+                class="w-1/3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold text-sm py-3 px-4 rounded-xl transition duration-200"
+              >
+                Hủy bỏ
+              </button>
+              <button 
+                type="submit" 
+                class="w-2/3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm py-3 px-4 rounded-xl transition duration-200 shadow-sm shadow-emerald-100"
+              >
+                Lưu & Kích hoạt tin
               </button>
             </div>
 
