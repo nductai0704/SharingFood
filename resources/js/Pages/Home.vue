@@ -53,6 +53,17 @@ const handleCancelClaim = (claimId) => {
     }
 };
 
+const handleGetDirections = (claim) => {
+    if (!claim.food_post || !claim.food_post.latitude || !claim.food_post.longitude) {
+        alert('Không tìm thấy tọa độ định vị của bài viết thực phẩm này.');
+        return;
+    }
+    const origin = `${userLat.value},${userLng.value}`;
+    const destination = `${claim.food_post.latitude},${claim.food_post.longitude}`;
+    const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
+    window.open(url, '_blank');
+};
+
 const handleCompleteClaim = (claimId) => {
     if (confirm('Bạn có chắc chắn muốn xác nhận đã giao xong thực phẩm này cho người nhận?')) {
         router.post(route('food-claims.complete', claimId), {}, {
@@ -777,10 +788,18 @@ watch(() => page.props.auth.user, (newUser) => {
                     <span>Thông tin liên hệ sẽ hiển thị sau khi chủ nhà phê duyệt.</span>
                   </div>
                   <!-- Trạng thái Đã duyệt / Hoàn thành -->
-                  <div v-else-if="claim.status === 'approved' || claim.status === 'completed'" class="bg-emerald-50/50 p-2 rounded-xl text-gray-600 space-y-0.5">
+                  <div v-else-if="claim.status === 'approved' || claim.status === 'completed'" class="bg-emerald-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1">
                     <p>👤 <b>Người cho:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.name }}</span></p>
                     <p>📞 <b>SĐT người cho:</b> <a :href="'tel:' + claim.food_post?.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ claim.food_post?.user?.phone || 'Chưa cập nhật' }}</a></p>
                     <p>📍 <b>Địa chỉ lấy đồ:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.address || 'Chưa cập nhật' }}</span></p>
+                    <div v-if="claim.food_post?.latitude && claim.food_post?.longitude" class="pt-1.5 border-t border-emerald-100/50 mt-1.5">
+                      <button 
+                        @click="handleGetDirections(claim)"
+                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                      >
+                        🗺️ Chỉ đường đến vị trí lấy đồ
+                      </button>
+                    </div>
                   </div>
                   <div v-else class="text-[10px] text-gray-400 italic">
                     Giao dịch đã kết thúc ({{ claim.status === 'rejected' ? 'Từ chối' : 'Đã hủy' }}).
