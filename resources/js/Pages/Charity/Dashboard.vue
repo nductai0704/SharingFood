@@ -14,8 +14,15 @@ const activeTab = ref('food'); // Tab active: 'food' hoặc 'campaign'
 const userLat = ref(10.7719);
 const userLng = ref(106.6983);
 const userAddress = ref('Đang xác định GPS...');
-const selectedRadius = ref(5); // Bán kính quét mặc định: 5 km
+const savedRadius = sessionStorage.getItem('sf_selectedRadius');
+const selectedRadius = ref(savedRadius ? parseInt(savedRadius) : 5); // Bán kính quét mặc định: 5 km
 const nearbyPosts = ref([]);
+const savedSearchQuery = sessionStorage.getItem('sf_searchQuery');
+const searchQuery = ref(savedSearchQuery || '');
+
+watch(searchQuery, (newVal) => {
+    sessionStorage.setItem('sf_searchQuery', newVal);
+});
 
 // Khai báo biến giữ các thực thể Leaflet Map
 let map = null;
@@ -25,7 +32,14 @@ let markersGroup = null;
 // Gọi API lấy dữ liệu thức ăn lân cận thực tế
 const fetchNearbyFood = async () => {
     try {
-        const response = await fetch(`/api/nearby-food?latitude=${userLat.value}&longitude=${userLng.value}&radius=${selectedRadius.value}`);
+        let url = `/api/nearby-food?latitude=${userLat.value}&longitude=${userLng.value}&radius=${selectedRadius.value}`;
+        
+        // Thêm tham số search nếu có
+        if (typeof searchQuery !== 'undefined' && searchQuery.value) {
+            url += `&search=${encodeURIComponent(searchQuery.value)}`;
+        }
+        
+        const response = await fetch(url);
         const result = await response.json();
         if (result.success) {
             nearbyPosts.value = result.data;
@@ -182,7 +196,8 @@ const getCreatedTimeLabel = (createdAtStr) => {
     return `${diffDays} ngày trước`;
 };
 
-const showMyPosts = ref(true);
+const savedShowMyPosts = sessionStorage.getItem('sf_showMyPosts');
+const showMyPosts = ref(savedShowMyPosts !== null ? savedShowMyPosts === 'true' : true);
 const currentTime = ref(new Date());
 let timeTicker = null;
 
@@ -212,8 +227,14 @@ const activeNearbyPosts = computed(() => {
 });
 
 // Lắng nghe thay đổi của biến Bán kính để tự động quét lại dữ liệu
-watch(selectedRadius, () => {
+watch(selectedRadius, (newVal) => {
+    sessionStorage.setItem('sf_selectedRadius', newVal);
     fetchNearbyFood();
+});
+
+// Lắng nghe thay đổi toggle bài viết của tôi
+watch(showMyPosts, (newVal) => {
+    sessionStorage.setItem('sf_showMyPosts', newVal);
 });
 
 // Theo dõi khi thông tin User thay đổi (ví dụ: khi cập nhật Profile và quay lại Trang chủ qua SPA)
@@ -492,32 +513,66 @@ const submitClaim = () => {
         <!-- CỘT TRÁI (2/3): Khung tìm kiếm xanh + Nội dung chính phân Tab -->
         <div class="lg:col-span-2 space-y-6">
           <!-- KHUNG XANH: Tìm kiếm Thực phẩm Lân cận -->
-          <div class="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-8 text-white shadow-xl shadow-emerald-100 relative overflow-hidden">
+          <div class="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-8 text-white shadow-xl shadow-emerald-100 relative overflow-hidden flex flex-col justify-center h-auto lg:h-[350px]">
             <div class="relative z-10 max-w-2xl space-y-4">
               <span class="bg-emerald-500/30 text-emerald-100 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">Định vị không gian GPS</span>
               <h1 class="text-3xl font-extrabold tracking-tight md:text-4xl">Tìm kiếm Thực phẩm Lân cận</h1>
-              <p class="text-emerald-100/90 leading-relaxed text-sm md:text-base">Hệ thống quét các thực phẩm dư thừa trong bán kính của Mái ấm.</p>
-              <div class="flex flex-wrap gap-3 pt-2">
-                <!-- Hiển thị GPS động của Mái ấm -->
-                <div class="bg-white/10 backdrop-blur-md border border-white/10 rounded-xl px-4 py-2.5 flex items-center space-x-2 text-sm max-w-xs md:max-w-md">
-                  <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
-                  <span class="truncate">
-                    📍 Vị trí: {{ userAddress }}
-                  </span>
+              <p class="text-emerald-100/90 leading-relaxed text-sm md:text-base">Hệ thống tự động xác định khoảng cách địa lý để kết nối và hiển thị chính xác các nguồn thực phẩm dư thừa cùng các chiến dịch quyên góp trong phạm vi lân cận của tổ chức.</p>
+              
+              <div class="flex flex-col gap-3 pt-3 max-w-2xl">
+                <!-- Hàng 1: Vị trí và Bán kính -->
+                <div class="flex items-center gap-3 w-full">
+                  <!-- Hiển thị GPS động -->
+                  <div class="flex-1 bg-white/10 backdrop-blur-md border border-white/10 rounded-xl px-4 py-2.5 flex items-center space-x-2 text-sm overflow-hidden">
+                    <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0"></span>
+                    <span class="truncate">
+                      📍 Vị trí: {{ userAddress }}
+                    </span>
+                  </div>
+                  
+                  <!-- Chọn bán kính lọc kết nối với biến selectedRadius -->
+                  <select 
+                    v-model="selectedRadius"
+                    class="flex-shrink-0 bg-white text-gray-800 rounded-xl pl-4 pr-10 py-2.5 text-sm font-medium border-0 focus:ring-2 focus:ring-emerald-400 cursor-pointer shadow-sm"
+                  >
+                    <option :value="2">Bán kính: 2 km</option>
+                    <option :value="5">Bán kính: 5 km</option>
+                    <option :value="10">Bán kính: 10 km</option>
+                    <option :value="15">Bán kính: 15 km</option>
+                  </select>
                 </div>
-                
-                <!-- Chọn bán kính lọc -->
-                <select 
-                  v-model="selectedRadius"
-                  class="bg-white text-gray-800 rounded-xl pl-4 pr-10 py-2.5 text-sm font-medium border-0 focus:ring-2 focus:ring-emerald-400 cursor-pointer"
-                >
-                  <option :value="2">Bán kính: 2 km</option>
-                  <option :value="5">Bán kính: 5 km</option>
-                  <option :value="10">Bán kính: 10 km</option>
-                  <option :value="15">Bán kính: 15 km</option>
-                </select>
+
+                <!-- Hàng 2: Ô TÌM KIẾM THEO TÊN / DANH MỤC THỰC PHẨM (Premium UI) -->
+                <div class="relative w-full group">
+                  <!-- Icon kính lúp sang trọng -->
+                  <div class="absolute inset-y-0 left-0 flex items-center pl-4 pointer-events-none transition-transform group-focus-within:scale-110">
+                    <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+                    </svg>
+                  </div>
+                  
+                  <!-- Ô nhập liệu bo tròn lớn, bóng đổ nổi bật -->
+                  <input 
+                    type="text" 
+                    v-model="searchQuery"
+                    @keyup.enter="fetchNearbyFood"
+                    class="w-full bg-white text-gray-900 rounded-2xl pl-12 pr-28 py-3.5 text-sm font-semibold border-0 focus:ring-4 focus:ring-emerald-400/50 shadow-lg placeholder-gray-400 transition-all duration-300"
+                    placeholder="Nhập tên thực phẩm hoặc danh mục..."
+                  />
+                  
+                  <!-- Nút bấm nhúng thẳng vào trong ô nhập -->
+                  <button 
+                    @click="fetchNearbyFood"
+                    class="absolute right-1.5 top-1.5 bottom-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs px-5 rounded-xl transition-all shadow-md shadow-emerald-500/30 whitespace-nowrap flex items-center"
+                  >
+                    Tìm kiếm
+                  </button>
+                </div>
               </div>
             </div>
+            <!-- Decorative background elements -->
+            <div class="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+            <div class="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/20 rounded-full blur-2xl"></div>
           </div>
           <!-- Thanh Tabs chuyển đổi -->
           <div class="flex border border-gray-100 bg-white rounded-2xl p-1 shadow-sm">
@@ -706,13 +761,13 @@ const submitClaim = () => {
         <!-- CỘT PHẢI (1/3): Bản đồ tương tác + Yêu cầu nhận -->
         <div class="space-y-6 lg:sticky lg:top-24 lg:self-start">
           <!-- Bản đồ định vị lân cận -->
-          <div class="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-3">
+          <div class="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-3 flex flex-col justify-between h-auto lg:h-[350px]">
             <div class="flex justify-between items-center">
               <h3 class="font-bold text-gray-950 text-sm">Bản đồ thực phẩm lân cận</h3>
               <span class="text-[10px] text-gray-400">Định vị thời gian thực</span>
             </div>
             <!-- Box gắn Map (z-10 để không bị đè menu) -->
-            <div id="map" class="h-64 rounded-2xl border border-gray-100 z-10"></div>
+            <div id="map" class="w-full flex-1 min-h-[250px] rounded-2xl border border-gray-100 z-10"></div>
           </div>
 
           <!-- Yêu cầu & Giao nhận (Gồm cả bài cho & bài nhận đang hoạt động) -->

@@ -22,16 +22,26 @@ class FoodPostController extends Controller
         $latitude = $request->input('latitude', 10.7719);
         $longitude = $request->input('longitude', 106.6983);
         $radius = $request->input('radius', 5);
+        $search = $request->input('search');
 
-        $posts = FoodPost::with('user')
+        $query = FoodPost::with('user')
             ->select('food_posts.*')
             ->selectRaw(
                 '(6371 * acos(cos(radians(?)) * cos(radians(latitude)) * cos(radians(longitude) - radians(?)) + sin(radians(?)) * sin(radians(latitude)))) AS distance',
                 [$latitude, $longitude, $latitude]
             )
             ->where('status', 'available')
-            ->where('ai_status', 'safe')
-            ->having('distance', '<=', $radius)
+            ->where('ai_status', 'safe');
+
+        // Áp dụng bộ lọc tìm kiếm nếu có
+        if (!empty($search)) {
+            $query->where(function ($q) use ($search) {
+                $q->where('title', 'like', '%' . $search . '%')
+                  ->orWhere('description', 'like', '%' . $search . '%');
+            });
+        }
+
+        $posts = $query->having('distance', '<=', $radius)
             ->orderBy('distance')
             ->get();
 
