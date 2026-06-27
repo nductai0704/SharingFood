@@ -27,13 +27,16 @@ const handleUpdateClaimStatus = (claimId, status) => {
           <Link :href="$page.props.auth.user && $page.props.auth.user.role === 'charity' ? route('charity.dashboard') : '/'" class="flex items-center space-x-3 group">
             <div class="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md shadow-emerald-200 group-hover:scale-105 transition-transform duration-200">S</div>
             <span class="text-xl font-bold text-gray-950 tracking-tight group-hover:text-emerald-600 transition-colors duration-200">ShareFood<span class="text-emerald-600">.vn</span></span>
+            <span v-if="$page.props.auth.user && $page.props.auth.user.role === 'charity'" class="hidden sm:inline-block bg-emerald-100 text-emerald-800 text-[10px] uppercase tracking-wider px-2.5 py-1 rounded-full font-bold border border-emerald-200">
+              Tổ Chức Từ Thiện
+            </span>
           </Link>
 
           <!-- Desktop menu -->
           <div class="hidden md:flex items-center space-x-6">
-            <Link href="/" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Trang chủ</Link>
+            <Link :href="route('dashboard')" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Trang chủ</Link>
             <Link :href="route('food-posts.index')" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Thực phẩm</Link>
-            <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Chiến dịch từ thiện</Link>
+            <Link v-if="$page.props.auth.user && $page.props.auth.user.role === 'charity'" :href="route('charity.campaigns')" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Chiến dịch từ thiện</Link>
             <div class="h-8 w-px bg-gray-200"></div>
             
             <div v-if="$page.props.auth.user" class="flex items-center space-x-4">
@@ -135,9 +138,9 @@ const handleUpdateClaimStatus = (claimId, status) => {
       <!-- Mobile dropdown menu -->
       <div v-if="isMobileMenuOpen" class="md:hidden bg-white border-t border-gray-100 p-4 space-y-4 shadow-inner">
         <div class="flex flex-col space-y-3">
-          <Link href="/" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Trang chủ</Link>
+          <Link :href="route('dashboard')" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Trang chủ</Link>
           <Link :href="route('food-posts.index')" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Thực phẩm</Link>
-          <Link href="#" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Chiến dịch từ thiện</Link>
+          <Link v-if="$page.props.auth.user && $page.props.auth.user.role === 'charity'" :href="route('charity.campaigns')" class="text-gray-600 hover:text-emerald-600 font-medium text-sm transition">Chiến dịch từ thiện</Link>
         </div>
         
         <div class="h-px bg-gray-100"></div>

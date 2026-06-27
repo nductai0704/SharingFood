@@ -106,7 +106,13 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
         if (auth()->user()->status !== 'verified') {
             return redirect()->route('charity.pending');
         }
-        return Inertia::render('Charity/Campaigns');
+        $campaigns = \App\Models\Campaign::where('user_id', auth()->id())
+            ->with('items')
+            ->latest()
+            ->get();
+        return Inertia::render('Charity/Campaigns', [
+            'dbCampaigns' => $campaigns
+        ]);
     })->name('charity.campaigns');
 
 
@@ -117,6 +123,10 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
         }
         return Inertia::render('Charity/Pending');
     })->name('charity.pending');
+    
+    // Trang khởi tạo và lưu chiến dịch quyên góp
+    Route::get('/charity/campaigns/create', [\App\Http\Controllers\CampaignController::class, 'create'])->name('charity.campaigns.create');
+    Route::post('/charity/campaigns', [\App\Http\Controllers\CampaignController::class, 'store'])->name('charity.campaigns.store');
 });
 
 Route::middleware('auth')->group(function () {

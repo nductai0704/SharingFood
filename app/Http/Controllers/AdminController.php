@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Models\Campaign;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -18,7 +19,7 @@ class AdminController extends Controller
             'new_users_count' => User::whereMonth('created_at', now()->month)->count(),
             'posts_today' => 42,
             'success_rate' => '87.5%',
-            'active_campaigns' => 5,
+            'active_campaigns' => Campaign::where('status', 'active')->count(),
         ];
 
         // Lấy danh sách users và load kèm tài liệu (documents)
@@ -27,15 +28,15 @@ class AdminController extends Controller
         // Lấy danh sách nhật ký hệ thống kèm thông tin user thực hiện
         $systemLogs = \App\Models\SystemLog::with('user')->orderBy('created_at', 'desc')->take(100)->get();
 
-        // Danh sách giả lập cho bài đăng vi phạm và chiến dịch chờ duyệt
-        $flaggedPosts = [];
-        $pendingCampaigns = [];
+        // Danh sách chiến dịch chờ duyệt và đã duyệt
+        $pendingCampaigns = Campaign::with(['user', 'items'])->where('status', 'pending')->orderBy('created_at', 'desc')->get();
+        $activeCampaigns = Campaign::with(['user', 'items'])->where('status', 'active')->orderBy('created_at', 'desc')->get();
 
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
             'users' => $users,
-            'flaggedPosts' => $flaggedPosts,
             'pendingCampaigns' => $pendingCampaigns,
+            'activeCampaigns' => $activeCampaigns,
             'systemLogs' => $systemLogs,
         ]);
     }
@@ -100,11 +101,27 @@ class AdminController extends Controller
     }
 
     /**
-     * Xử lý duyệt chiến dịch (placeholder).
+     * Xử lý duyệt chiến dịch.
      */
     public function moderateCampaign(Request $request, $campaignId)
     {
-         // TODO: Cập nhật logic cho Campaign khi có model
-        return redirect()->back();
+        $request->validate([
+            'status' => 'required|in:active,rejected',
+        ]);
+
+        $campaign = Campaign::findOrFail($campaignId);
+        $campaign->update([
+            'status' => $request->status,
+        ]);
+
+        \App\Models\SystemLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'CAMPAIGN_MODERATION',
+            'description' => "Admin đã " . ($request->status === 'active' ? 'phê duyệt' : 'từ chối') . " xuất bản chiến dịch '{$campaign->title}' (ID: {$campaign->id}).",
+            'ip_address' => $request->ip(),
+            'created_at' => now()
+        ]);
+
+        return redirect()->back()->with('success', 'Đã xử lý chiến dịch thành công.');
     }
 }

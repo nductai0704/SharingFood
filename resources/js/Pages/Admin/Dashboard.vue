@@ -1,12 +1,12 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 
 // Nhận dữ liệu truyền từ Laravel Controller sang thông qua Props
 const props = defineProps({
     stats: Object,              // Chứa các số liệu tổng hợp thống kê
     users: Array,              // Danh sách toàn bộ người dùng và tài liệu minh chứng
-    flaggedPosts: Array,       // Danh sách bài đăng bị AI gắn cờ 'flagged'
+    activeCampaigns: Array,    // Danh sách chiến dịch từ thiện đã duyệt 'active'
     pendingCampaigns: Array,   // Danh sách chiến dịch từ thiện chờ duyệt 'pending'
     systemLogs: Array,         // Danh sách nhật ký hệ thống
 });
@@ -14,8 +14,36 @@ const props = defineProps({
 // State quản lý Tab đang hiển thị tích cực
 const activeTab = ref('overview'); 
 
+// State hiển thị Dropdown thông báo
+const showNotifications = ref(false);
+
 // State lưu thông tin Tổ chức đang được chọn để xem hồ sơ pháp lý (Modal)
 const selectedCharity = ref(null);
+
+// State lưu thông tin Chiến dịch đang được chọn để xem chi tiết (Modal)
+const selectedCampaign = ref(null);
+
+// Lấy danh sách các Tổ chức từ thiện đang chờ duyệt
+const pendingCharities = computed(() => {
+    return props.users.filter(u => u.role === 'charity' && u.status === 'pending');
+});
+
+// Tổng số lượng thông báo
+const totalNotifications = computed(() => {
+    return pendingCharities.value.length + (props.pendingCampaigns?.length || 0);
+});
+
+// Hàm chuyển sang trang Người dùng khi bấm vào thông báo
+const goToUsersTab = () => {
+    activeTab.value = 'users';
+    showNotifications.value = false; // Ẩn dropdown đi
+};
+
+// Hàm chuyển sang trang Kiểm duyệt chiến dịch
+const goToModerationTab = () => {
+    activeTab.value = 'moderation';
+    showNotifications.value = false; // Ẩn dropdown đi
+};
 
 // --- CÁC HÀM XỬ LÝ SỰ KIỆN TƯƠNG TÁC QUA INERTIA ROUTER ---
 
@@ -89,6 +117,76 @@ const getStatusLabel = (status) => {
                             <span class="text-sm font-semibold text-white">Ban Quản Trị</span>
                             <span class="text-[10px] text-slate-400">Hồ sơ: {{ $page.props.auth.user.name }}</span>
                         </Link>
+                        
+                        <!-- Nút Chuông Thông Báo -->
+                        <div class="relative">
+                            <button @click="showNotifications = !showNotifications" class="relative p-2 text-slate-300 hover:text-white transition rounded-full hover:bg-slate-800 focus:outline-none">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                                
+                                <!-- Chấm đỏ Badge đếm số lượng -->
+                                <span v-if="totalNotifications > 0" class="absolute top-1 right-1 flex items-center justify-center w-4 h-4 text-[10px] font-bold text-white bg-red-500 border-2 border-slate-900 rounded-full">
+                                    {{ totalNotifications }}
+                                </span>
+                            </button>
+
+                            <!-- Lớp Overlay trong suốt để bắt sự kiện click ra ngoài -->
+                            <div v-if="showNotifications" @click="showNotifications = false" class="fixed inset-0 z-40"></div>
+
+                            <!-- Dropdown thông báo chi tiết khi click -->
+                            <div v-if="showNotifications && totalNotifications > 0" class="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden transition-all z-50">
+                                <div class="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+                                    <h3 class="text-sm font-bold text-gray-900">Thông báo mới</h3>
+                                    <span class="text-xs bg-red-100 text-red-600 font-bold px-2 py-0.5 rounded-full">{{ totalNotifications }}</span>
+                                </div>
+                                <div class="max-h-64 overflow-y-auto">
+                                    
+                                    <!-- Thông báo tổ chức mới -->
+                                    <div 
+                                        v-for="charity in pendingCharities" 
+                                        :key="'charity-' + charity.id" 
+                                        @click="goToUsersTab"
+                                        class="px-4 py-3 border-b border-gray-50 hover:bg-emerald-50 cursor-pointer transition flex gap-3 items-start"
+                                    >
+                                        <div class="w-8 h-8 rounded-full bg-emerald-100 flex-shrink-0 flex items-center justify-center text-emerald-600 font-bold text-xs mt-0.5">
+                                            TC
+                                        </div>
+                                        <div>
+                                            <p class="text-xs text-gray-800 font-medium leading-relaxed">
+                                                Tổ chức <span class="font-bold text-emerald-600">{{ charity.name }}</span> vừa đăng ký tài khoản và đang chờ xác thực pháp lý.
+                                            </p>
+                                            <p class="text-[10px] text-gray-400 mt-1">{{ new Date(charity.created_at).toLocaleDateString('vi-VN') }}</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- Thông báo chiến dịch mới -->
+                                    <div 
+                                        v-for="cam in pendingCampaigns" 
+                                        :key="'cam-' + cam.id" 
+                                        @click="goToModerationTab"
+                                        class="px-4 py-3 border-b border-gray-50 hover:bg-amber-50 cursor-pointer transition flex gap-3 items-start"
+                                    >
+                                        <div class="w-8 h-8 rounded-full bg-amber-100 flex-shrink-0 flex items-center justify-center text-amber-600 font-bold text-xs mt-0.5">
+                                            CD
+                                        </div>
+                                        <div>
+                                            <p class="text-xs text-gray-800 font-medium leading-relaxed">
+                                                Chiến dịch <span class="font-bold text-amber-600">{{ cam.title }}</span> đang chờ duyệt xuất bản đại chúng.
+                                            </p>
+                                            <p class="text-[10px] text-gray-400 mt-1">{{ new Date(cam.created_at).toLocaleDateString('vi-VN') }}</p>
+                                        </div>
+                                    </div>
+                                    
+                                </div>
+                            </div>
+                            
+                            <!-- Nếu click vào chuông nhưng không có thông báo -->
+                            <div v-if="showNotifications && totalNotifications === 0" class="absolute right-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden transition-all z-50">
+                                <div class="p-6 text-center text-gray-400 text-sm">
+                                    Không có thông báo mới nào.
+                                </div>
+                            </div>
+                        </div>
+
                         <Link :href="route('logout')" method="post" as="button" class="text-xs bg-slate-800 hover:bg-red-600 px-3 py-2 rounded-xl transition duration-200">Đăng xuất</Link>
                     </div>
                 </div>
@@ -244,50 +342,54 @@ const getStatusLabel = (status) => {
 
             <div v-if="activeTab === 'moderation'" class="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
                 
+                <!-- Cột trái: Chiến dịch chờ duyệt -->
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
                     <div class="border-b border-gray-100 pb-3">
-                        <h3 class="text-base font-bold text-gray-950 flex items-center gap-2">🚨 Bài đăng lẻ bị AI gắn cờ nghi ngờ</h3>
-                        <p class="text-xs text-gray-500 mt-0.5">Các bài viết chứa từ khóa độc hại, hết hạn hoặc hình ảnh rủi ro VSATTP.</p>
-                    </div>
-                    <div v-if="!flaggedPosts || flaggedPosts.length === 0" class="text-sm text-gray-400 py-6 text-center">
-                        Tuyệt vời! Hiện tại không có bài viết nào bị hệ thống gắn cờ.
-                    </div>
-                    <div v-else class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                        <div v-for="post in flaggedPosts" :key="post.id" class="p-4 bg-red-50/40 border border-red-100 rounded-xl flex flex-col justify-between space-y-3">
-                            <div>
-                                <h4 class="text-sm font-bold text-gray-950">{{ post.title }}</h4>
-                                <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ post.description }}</p>
-                                <div class="text-[11px] text-red-600 font-semibold mt-1">Lý do: AI phát hiện hình ảnh hoặc nội dung sai quy chuẩn</div>
-                            </div>
-                            <div class="flex justify-end space-x-2">
-                                <button @click="moderatePost(post.id, 'safe')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm transition">Xác nhận An toàn</button>
-                                <button @click="moderatePost(post.id, 'hidden')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-3 py-1.5 rounded-lg transition">Ẩn/Xóa bài</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-                    <div class="border-b border-gray-100 pb-3">
-                        <h3 class="text-base font-bold text-gray-950 flex items-center gap-2">📋 Chiến dịch gom quyên góp chờ duyệt</h3>
+                        <h3 class="text-base font-bold text-gray-950 flex items-center gap-2">📋 Chiến dịch chờ duyệt</h3>
                         <p class="text-xs text-gray-500 mt-0.5">Kiểm soát nội dung, thời gian và mục tiêu của chiến dịch trước khi hiển thị đại chúng.</p>
                     </div>
                     <div v-if="!pendingCampaigns || pendingCampaigns.length === 0" class="text-sm text-gray-400 py-6 text-center">
                         Không có chiến dịch quyên góp lớn nào đang chờ duyệt.
                     </div>
                     <div v-else class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                        <div v-for="cam in pendingCampaigns" :key="cam.id" class="p-4 bg-gray-50 border border-gray-200/70 rounded-xl flex flex-col justify-between space-y-3">
+                        <div v-for="cam in pendingCampaigns" :key="cam.id" class="p-4 bg-amber-50/50 border border-amber-100 rounded-xl flex flex-col justify-between space-y-3">
                             <div>
                                 <h4 class="text-sm font-bold text-gray-950">{{ cam.title }}</h4>
                                 <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ cam.description }}</p>
-                                <div class="mt-2 grid grid-cols-2 gap-1 text-xs text-gray-500">
-                                    <div>📦 Mục tiêu: <span class="font-semibold text-gray-800">{{ cam.target_quantity }} {{ cam.target_item }}</span></div>
-                                    <div>📍 Vị trí nhận: <span class="font-semibold text-gray-800 line-clamp-1">{{ cam.location_details }}</span></div>
+                                <div class="mt-2 text-xs text-gray-500">
+                                    <span class="font-semibold text-gray-800">Tổ chức:</span> {{ cam.user?.name }}
                                 </div>
                             </div>
                             <div class="flex justify-end space-x-2">
-                                <button @click="moderateCampaign(cam.id, 'active')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm transition">Duyệt xuất bản</button>
-                                <button @click="moderateCampaign(cam.id, 'rejected')" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 font-semibold px-3 py-1.5 rounded-lg transition">Từ chối</button>
+                                <button @click="selectedCampaign = cam" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition">Xem chi tiết</button>
+                                <button @click="moderateCampaign(cam.id, 'active')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm transition">Duyệt</button>
+                                <button @click="moderateCampaign(cam.id, 'rejected')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-3 py-1.5 rounded-lg transition">Từ chối</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cột phải: Chiến dịch đã duyệt / Đang hoạt động -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+                    <div class="border-b border-gray-100 pb-3">
+                        <h3 class="text-base font-bold text-gray-950 flex items-center gap-2">✅ Chiến dịch đang hoạt động</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Danh sách các chiến dịch từ thiện đã được Ban quản trị phê duyệt và đang chạy.</p>
+                    </div>
+                    <div v-if="!activeCampaigns || activeCampaigns.length === 0" class="text-sm text-gray-400 py-6 text-center">
+                        Hiện tại không có chiến dịch nào đang hoạt động.
+                    </div>
+                    <div v-else class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                        <div v-for="cam in activeCampaigns" :key="cam.id" class="p-4 bg-emerald-50/30 border border-emerald-100 rounded-xl flex flex-col justify-between space-y-3">
+                            <div>
+                                <h4 class="text-sm font-bold text-gray-950">{{ cam.title }}</h4>
+                                <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ cam.description }}</p>
+                                <div class="mt-2 text-xs text-gray-500 flex justify-between">
+                                    <span><span class="font-semibold text-gray-800">Tổ chức:</span> {{ cam.user?.name }}</span>
+                                </div>
+                            </div>
+                            <div class="flex justify-end space-x-2">
+                                <button @click="selectedCampaign = cam" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition">Xem chi tiết</button>
+                                <button @click="moderateCampaign(cam.id, 'rejected')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-3 py-1.5 rounded-lg transition">Gỡ chiến dịch</button>
                             </div>
                         </div>
                     </div>
@@ -392,6 +494,65 @@ const getStatusLabel = (status) => {
                 <div class="p-6 bg-slate-50 border-t border-gray-100 flex justify-end space-x-3">
                     <button @click="verifyCharity(selectedCharity.id, 'rejected')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-bold px-4 py-2.5 rounded-xl transition">Từ chối cấp quyền</button>
                     <button @click="verifyCharity(selectedCharity.id, 'verified')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-md shadow-emerald-100 transition">Phê duyệt hoạt động</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Xem chi tiết Chiến dịch -->
+        <div v-if="selectedCampaign" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50 animate-fade-in">
+            <div class="bg-white w-full max-w-3xl rounded-3xl shadow-xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+                <div class="p-6 bg-slate-50 border-b border-gray-100 flex justify-between items-center">
+                    <div>
+                        <h3 class="text-base font-bold text-gray-950">Chi tiết chiến dịch</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Tổ chức: {{ selectedCampaign.user?.name || 'Không rõ' }}</p>
+                    </div>
+                    <button @click="selectedCampaign = null" class="text-gray-400 hover:text-gray-600 text-xl font-bold p-1">×</button>
+                </div>
+                
+                <div class="p-6 overflow-y-auto space-y-6 flex-1">
+                    <div class="space-y-4">
+                        <h4 class="text-lg font-bold text-gray-900">{{ selectedCampaign.title }}</h4>
+                        <p class="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{{ selectedCampaign.description }}</p>
+                        
+                        <div class="grid grid-cols-2 gap-4 text-sm bg-gray-50 p-4 rounded-xl border border-gray-100">
+                            <div>
+                                <span class="text-gray-500 font-semibold text-xs block mb-1">📅 Ngày bắt đầu</span>
+                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.start_date).toLocaleDateString('vi-VN') }}</span>
+                            </div>
+                            <div>
+                                <span class="text-gray-500 font-semibold text-xs block mb-1">🏁 Ngày kết thúc</span>
+                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.end_date).toLocaleDateString('vi-VN') }}</span>
+                            </div>
+                            <div class="col-span-2">
+                                <span class="text-gray-500 font-semibold text-xs block mb-1">📍 Địa điểm nhận quyên góp</span>
+                                <span class="text-gray-900 font-medium">{{ selectedCampaign.location_details }}</span>
+                            </div>
+                        </div>
+
+                        <div v-if="selectedCampaign.items && selectedCampaign.items.length > 0">
+                            <h5 class="text-sm font-bold text-gray-900 mb-3 border-b pb-2">📦 Nhu yếu phẩm kêu gọi</h5>
+                            <ul class="space-y-3">
+                                <li v-for="item in selectedCampaign.items" :key="item.id" class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                    <span class="text-sm font-semibold text-gray-800">{{ item.item_name }}</span>
+                                    <span class="text-xs font-bold bg-white border border-gray-200 px-2.5 py-1 rounded-md text-emerald-600">
+                                        Mục tiêu: {{ item.target_quantity }} {{ item.unit }}
+                                    </span>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-6 bg-slate-50 border-t border-gray-100 flex justify-end gap-3">
+                    <!-- Nút Đóng dùng chung -->
+                    <button @click="selectedCampaign = null" class="bg-gray-100 text-gray-700 font-bold px-4 py-2 rounded-xl hover:bg-gray-200 transition">Đóng</button>
+                    
+                    <!-- Nút hành động cho chiến dịch chờ duyệt -->
+                    <button v-if="selectedCampaign.status === 'pending'" @click="moderateCampaign(selectedCampaign.id, 'rejected'); selectedCampaign = null" class="bg-red-50 text-red-600 font-bold px-4 py-2 rounded-xl hover:bg-red-100 transition">Từ chối</button>
+                    <button v-if="selectedCampaign.status === 'pending'" @click="moderateCampaign(selectedCampaign.id, 'active'); selectedCampaign = null" class="bg-emerald-600 text-white font-bold px-5 py-2 rounded-xl shadow-lg hover:bg-emerald-700 hover:shadow-xl transition transform hover:-translate-y-0.5">Duyệt chiến dịch</button>
+
+                    <!-- Nút hành động cho chiến dịch đã duyệt -->
+                    <button v-if="selectedCampaign.status === 'active'" @click="moderateCampaign(selectedCampaign.id, 'rejected'); selectedCampaign = null" class="bg-red-100 hover:bg-red-200 text-red-700 font-bold px-4 py-2 rounded-xl transition">Gỡ chiến dịch</button>
                 </div>
             </div>
         </div>

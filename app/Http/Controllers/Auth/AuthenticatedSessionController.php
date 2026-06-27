@@ -84,10 +84,6 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerateToken();
 
-        if ($role === 'admin') {
-            return redirect('/login');
-        }
-
-        return redirect('/');
+        return redirect('/login');
     }
 }
