@@ -3,7 +3,8 @@ import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
 import { Head, Link, usePage, router } from '@inertiajs/vue3';
 
 const props = defineProps({
-    dbMyClaims: Array
+    dbMyClaims: Array,
+    dbMyCampaigns: Array
 });
 
 const isMobileMenuOpen = ref(false);
@@ -136,6 +137,7 @@ const updateMarkersOnMap = () => {
     // Xóa hết marker cũ của lần quét trước
     markersGroup.clearLayers();
 
+    // 1. Marker xanh lá (Thực phẩm lân cận)
     const greenIcon = L.icon({
         iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
         shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
@@ -156,6 +158,32 @@ const updateMarkersOnMap = () => {
                 </div>
             `);
     });
+
+    // 2. Marker xanh dương (Chiến dịch quyên góp của tôi)
+    const blueIcon = L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+    });
+
+    if (props.dbMyCampaigns && props.dbMyCampaigns.length > 0) {
+        props.dbMyCampaigns.forEach(campaign => {
+            if (campaign.latitude && campaign.longitude && campaign.status === 'active') {
+                L.marker([campaign.latitude, campaign.longitude], { icon: blueIcon })
+                    .addTo(markersGroup)
+                    .bindPopup(`
+                        <div style="font-family: sans-serif; width: 180px;">
+                            <b style="font-size: 13px; color: #1d4ed8;">${campaign.title}</b>
+                            <p style="font-size: 11px; color: #3b82f6; margin: 4px 0 0 0; font-weight: bold;">Tổ chức: Chiến dịch của bạn</p>
+                            <p style="font-size: 10px; color: #6b7280; margin: 4px 0 0 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;">${campaign.description}</p>
+                        </div>
+                    `);
+            }
+        });
+    }
 };
 
 // Hàm tính thời gian hết hạn thân thiện
@@ -719,27 +747,73 @@ const submitClaim = () => {
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <!-- Thẻ chiến dịch 1 -->
-              <div class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between hover:shadow-md transition">
-                <div class="space-y-3">
-                  <div class="flex justify-between items-center">
-                    <span class="bg-blue-50 text-blue-700 text-[10px] font-bold px-2 py-0.5 rounded border border-blue-100">Đang hoạt động</span>
+              <div v-if="!dbMyCampaigns || dbMyCampaigns.length === 0" class="col-span-full bg-white border border-dashed border-gray-200 rounded-3xl p-10 text-center text-gray-400 text-sm">
+                Bạn chưa khởi tạo chiến dịch nào.
+              </div>
+              <div 
+                v-for="campaign in dbMyCampaigns" 
+                :key="campaign.id" 
+                class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between group hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
+              >
+                <div class="space-y-4">
+                  <!-- Header: Trạng thái & Action -->
+                  <div class="flex justify-between items-start gap-2 border-b border-gray-50 pb-3">
+                    <div class="flex items-center gap-2">
+                      <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs uppercase shadow-sm">
+                        {{ $page.props.auth.user.name ? $page.props.auth.user.name.charAt(0) : 'T' }}
+                      </div>
+                      <div>
+                        <p class="text-[10px] text-gray-400 font-medium leading-none mb-1">Chiến dịch của bạn</p>
+                        <p class="text-[12px] font-bold text-blue-700 leading-none truncate max-w-[120px]">{{ $page.props.auth.user.name }}</p>
+                      </div>
+                    </div>
+                    <span 
+                      :class="campaign.status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : (campaign.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-gray-100 text-gray-600 border-gray-200')"
+                      class="text-[9px] font-bold px-2 py-1 rounded-lg border flex items-center gap-1 shadow-sm"
+                    >
+                      <span v-if="campaign.status === 'active'" class="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse"></span>
+                      {{ campaign.status === 'active' ? 'Đang hoạt động' : (campaign.status === 'pending' ? 'Chờ duyệt' : campaign.status) }}
+                    </span>
                   </div>
-                  <h3 class="font-bold text-base text-gray-900">Chiến dịch quyên góp 500kg Gạo tẻ</h3>
-                  <p class="text-xs text-gray-500 line-clamp-3">Kêu gọi gạo tẻ cứu trợ nấu cháo và cơm trưa thiện nguyện hàng ngày cho bà con lao động nghèo.</p>
+                  
+                  <!-- Title & Description -->
+                  <div class="space-y-2">
+                    <h3 class="font-bold text-[15px] text-gray-900 group-hover:text-emerald-600 transition-colors line-clamp-2 leading-snug" :title="campaign.title">{{ campaign.title }}</h3>
+                    <p class="text-[11px] text-gray-500 line-clamp-2 leading-relaxed">{{ campaign.description }}</p>
+                  </div>
+
+                  <!-- Metadata Box (Date & Location) -->
+                  <div class="bg-gray-50/80 p-3 rounded-xl border border-gray-100/80 space-y-2 text-[11px] text-gray-600">
+                     <div class="flex items-start gap-2">
+                       <span class="shrink-0 text-gray-400">📅</span>
+                       <span class="font-medium">Hạn chót: <span class="text-gray-900 font-bold">{{ new Date(campaign.end_date).toLocaleDateString('vi-VN') }}</span></span>
+                     </div>
+                     <div class="flex items-start gap-2">
+                       <span class="shrink-0 text-gray-400">📍</span>
+                       <span class="font-medium line-clamp-2">Tập kết tại: <span class="text-gray-900">{{ campaign.location_details || 'Đang cập nhật' }}</span></span>
+                     </div>
+                  </div>
                 </div>
                 
-                <div class="space-y-3 pt-3">
-                  <div class="space-y-1.5">
-                    <div class="flex justify-between text-xs font-semibold">
-                      <span class="text-gray-500">Đã nhận thực tế:</span>
-                      <span class="text-emerald-600">350kg / 500kg (70%)</span>
-                    </div>
-                    <div class="w-full bg-gray-100 h-2.5 rounded-full overflow-hidden">
-                      <div class="bg-emerald-500 h-full" style="width: 70%"></div>
+                <!-- Items Progress -->
+                <div class="space-y-3 pt-3 border-t border-gray-50 mt-auto">
+                  <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Tiến độ quyên góp</p>
+                  <div class="space-y-2.5 max-h-[120px] overflow-y-auto pr-1 custom-scrollbar">
+                    <div class="space-y-1.5" v-for="item in (campaign.items || [])" :key="item.id">
+                      <div class="flex justify-between text-[11px] font-semibold">
+                        <span class="text-gray-700 truncate mr-2" :title="item.item_name">{{ item.item_name }}</span>
+                        <span class="text-emerald-600 shrink-0 font-bold">
+                          {{ item.current_quantity }} / {{ item.target_quantity }} ({{ Math.round((item.current_quantity / Math.max(item.target_quantity, 1)) * 100) }}%)
+                        </span>
+                      </div>
+                      <div class="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden shadow-inner">
+                        <div class="bg-gradient-to-r from-emerald-400 to-teal-500 h-full rounded-full transition-all duration-700" :style="{ width: Math.round((item.current_quantity / Math.max(item.target_quantity, 1)) * 100) + '%' }"></div>
+                      </div>
                     </div>
                   </div>
-                  <button class="w-full bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-medium text-xs py-2 rounded-xl transition">Xem danh sách đóng góp</button>
+                  <Link :href="route('charity.campaigns')" class="w-full bg-gray-50 hover:bg-gray-100 text-gray-700 border border-gray-200 font-bold text-xs py-3 rounded-xl transition text-center block mt-3 shadow-sm">
+                    Xem chi tiết quản lý
+                  </Link>
                 </div>
               </div>
 

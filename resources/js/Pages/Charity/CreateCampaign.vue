@@ -1,4 +1,5 @@
 <script setup>
+import { ref, onMounted } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
@@ -6,11 +7,147 @@ const form = useForm({
     title: '',
     description: '',
     location_details: '',
+    latitude: null,
+    longitude: null,
     end_date: '',
     items: [
         { item_name: '', target_quantity: 1 }
     ],
 });
+
+// Hàm tải động thư viện Leaflet (Map)
+const loadLeaflet = () => {
+    return new Promise((resolve) => {
+        if (window.L) {
+            resolve(window.L);
+            return;
+        }
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
+        document.head.appendChild(link);
+
+        const script = document.createElement('script');
+        script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js';
+        script.onload = () => resolve(window.L);
+        document.head.appendChild(script);
+    });
+};
+
+const mapInstance = ref(null);
+const markerInstance = ref(null);
+
+onMounted(async () => {
+    const L = await loadLeaflet();
+    
+    // Khởi tạo bản đồ tại tâm Việt Nam nếu chưa có tọa độ
+    const initialLat = 16.047079;
+    const initialLng = 108.206230;
+    
+    mapInstance.value = L.map('campaign-map').setView([initialLat, initialLng], 6);
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '© OpenStreetMap'
+    }).addTo(mapInstance.value);
+
+    // Xử lý icon của Leaflet (Sửa lỗi đường dẫn ảnh mặc định)
+    const DefaultIcon = L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+    });
+    L.Marker.prototype.options.icon = DefaultIcon;
+
+    // Lắng nghe sự kiện click trên bản đồ để ghim tọa độ
+    mapInstance.value.on('click', async function(e) {
+        const lat = e.latlng.lat;
+        const lng = e.latlng.lng;
+        
+        // Cập nhật form
+        form.latitude = lat;
+        form.longitude = lng;
+
+        // Xóa marker cũ nếu có
+        if (markerInstance.value) {
+            mapInstance.value.removeLayer(markerInstance.value);
+        }
+
+        // Tạo marker mới và cho phép kéo thả
+        markerInstance.value = L.marker([lat, lng], { draggable: true }).addTo(mapInstance.value);
+        markerInstance.value.bindPopup("<b>Vị trí tập kết quyên góp</b>").openPopup();
+        
+        // Cập nhật địa chỉ chữ từ tọa độ
+        await reverseGeocode(lat, lng);
+        
+        // Bắt sự kiện kéo thả
+        markerInstance.value.on('dragend', async () => {
+            const position = markerInstance.value.getLatLng();
+            form.latitude = position.lat;
+            form.longitude = position.lng;
+            await reverseGeocode(position.lat, position.lng);
+        });
+    });
+});
+
+// Hàm lấy địa chỉ chữ từ tọa độ (Reverse Geocoding)
+const reverseGeocode = async (lat, lng) => {
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`, {
+            headers: { 'Accept-Language': 'vi' }
+        });
+        const data = await response.json();
+        if (data && data.display_name) {
+            form.location_details = data.display_name;
+        }
+    } catch (error) {
+        console.error("Lỗi phân tích địa chỉ từ tọa độ: ", error);
+    }
+};
+
+// Hàm lấy tọa độ từ địa chỉ đã nhập (Geocoding)
+const geocodeAddress = async () => {
+    const query = form.location_details;
+    if (!query || query.trim().length < 5) return;
+
+    try {
+        const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`, {
+            headers: { 'Accept-Language': 'vi' }
+        });
+        const data = await response.json();
+        
+        if (data && data.length > 0) {
+            const result = data[0];
+            form.latitude = parseFloat(parseFloat(result.lat).toFixed(6));
+            form.longitude = parseFloat(parseFloat(result.lon).toFixed(6));
+            
+            if (mapInstance.value) {
+                mapInstance.value.setView([form.latitude, form.longitude], 16);
+                
+                if (markerInstance.value) {
+                    markerInstance.value.setLatLng([form.latitude, form.longitude]);
+                } else {
+                    markerInstance.value = window.L.marker([form.latitude, form.longitude], { draggable: true }).addTo(mapInstance.value);
+                    
+                    markerInstance.value.on('dragend', async () => {
+                        const position = markerInstance.value.getLatLng();
+                        form.latitude = position.lat;
+                        form.longitude = position.lng;
+                        await reverseGeocode(position.lat, position.lng);
+                    });
+                }
+                markerInstance.value.bindPopup("<b>Vị trí tập kết quyên góp</b>").openPopup();
+            }
+        } else {
+            alert("Không tìm thấy địa điểm này trên bản đồ. Vui lòng ghi chi tiết hơn hoặc ghim bằng tay trên bản đồ.");
+        }
+    } catch (error) {
+        console.error("Lỗi tìm kiếm tọa độ từ địa chỉ: ", error);
+    }
+};
 
 // Thêm một dòng vật phẩm mới
 const addItem = () => {
@@ -28,6 +165,10 @@ const removeItem = (index) => {
 };
 
 const submit = () => {
+    if (!form.latitude || !form.longitude) {
+        alert('Vui lòng ghim một vị trí tập kết trên bản đồ.');
+        return;
+    }
     form.post(route('charity.campaigns.store'), {
         preserveScroll: true,
         onSuccess: () => {
@@ -75,8 +216,17 @@ const submit = () => {
                             <!-- Địa chỉ tập kết -->
                             <div>
                                 <label class="block text-sm font-semibold text-gray-700 mb-1">Địa điểm tập kết vật lý <span class="text-red-500">*</span></label>
-                                <input v-model="form.location_details" type="text" class="w-full rounded-xl border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm" placeholder="Địa chỉ chi tiết nhận hàng quyên góp..." required>
+                                <div class="flex gap-2">
+                                    <input v-model="form.location_details" type="text" class="flex-1 w-full rounded-xl border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm" placeholder="VD: 123 Đường A, Quận B, TP..." required>
+                                    <button type="button" @click="geocodeAddress" class="bg-slate-800 hover:bg-slate-900 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-md transition whitespace-nowrap">
+                                        📍 Tìm trên bản đồ
+                                    </button>
+                                </div>
                                 <div v-if="form.errors.location_details" class="text-red-500 text-xs mt-1">{{ form.errors.location_details }}</div>
+                                
+                                <p class="text-xs text-gray-500 mt-3 mb-2 font-medium">Bản đồ định vị: Bạn có thể kéo thả ghim đỏ hoặc bấm vào bản đồ để chọn tọa độ chính xác. Địa chỉ bên trên sẽ tự động cập nhật, bạn có thể tự chỉnh sửa lại số nhà nếu bản đồ nhận diện chưa chính xác.</p>
+                                <div id="campaign-map" class="w-full h-72 rounded-xl border-2 border-gray-200 z-10 shadow-inner"></div>
+                                <div v-if="!form.latitude" class="text-red-500 text-xs mt-2 italic">* Vui lòng chọn một điểm trên bản đồ.</div>
                             </div>
 
                             <!-- Thời gian -->

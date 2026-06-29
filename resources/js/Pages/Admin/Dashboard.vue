@@ -516,8 +516,8 @@ const getStatusLabel = (status) => {
                         
                         <div class="grid grid-cols-2 gap-4 text-sm bg-gray-50 p-4 rounded-xl border border-gray-100">
                             <div>
-                                <span class="text-gray-500 font-semibold text-xs block mb-1">📅 Ngày bắt đầu</span>
-                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.start_date).toLocaleDateString('vi-VN') }}</span>
+                                <span class="text-gray-500 font-semibold text-xs block mb-1">📅 Ngày tạo</span>
+                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.created_at).toLocaleDateString('vi-VN') }}</span>
                             </div>
                             <div>
                                 <span class="text-gray-500 font-semibold text-xs block mb-1">🏁 Ngày kết thúc</span>

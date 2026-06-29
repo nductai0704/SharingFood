@@ -16,8 +16,16 @@ Route::get('/', function () {
             ->latest()
             ->get();
     }
+    
+    // Load các chiến dịch đã được duyệt để hiển thị ngoài trang chủ
+    $dbActiveCampaigns = \App\Models\Campaign::with(['user', 'items'])
+        ->where('status', 'active')
+        ->latest()
+        ->get();
+
     return Inertia::render('Home', [
-        'dbMyClaims' => $dbMyClaims
+        'dbMyClaims' => $dbMyClaims,
+        'dbActiveCampaigns' => $dbActiveCampaigns
     ]);
 });
 
@@ -96,8 +104,15 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
             ->with(['foodPost.user'])
             ->latest()
             ->get();
+            
+        $dbMyCampaigns = \App\Models\Campaign::where('user_id', auth()->id())
+            ->with('items')
+            ->latest()
+            ->get();
+            
         return Inertia::render('Charity/Dashboard', [
-            'dbMyClaims' => $dbMyClaims
+            'dbMyClaims' => $dbMyClaims,
+            'dbMyCampaigns' => $dbMyCampaigns
         ]);
     })->name('charity.dashboard');
 

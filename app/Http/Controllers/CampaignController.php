@@ -43,6 +43,8 @@ class CampaignController extends Controller
             'title' => 'required|string|max:255',
             'description' => 'nullable|string',
             'location_details' => 'required|string',
+            'latitude' => 'nullable|numeric',
+            'longitude' => 'nullable|numeric',
             'end_date' => 'required|date|after:today',
             
             // Validate mảng vật phẩm
@@ -67,6 +69,8 @@ class CampaignController extends Controller
                 'description' => $validated['description'],
                 'status' => 'pending',
                 'location_details' => $validated['location_details'],
+                'latitude' => $validated['latitude'] ?? null,
+                'longitude' => $validated['longitude'] ?? null,
                 'end_date' => $validated['end_date'],
             ]);
 
