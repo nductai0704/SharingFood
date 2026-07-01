@@ -9,6 +9,13 @@ use App\Models\FoodPost;
 use Inertia\Inertia;
 
 Route::get('/', function () {
+    return Inertia::render('Welcome', [
+        'canLogin' => Route::has('login'),
+        'canRegister' => Route::has('register'),
+    ]);
+});
+
+Route::get('/home', function () {
     $dbMyClaims = [];
     if (auth()->check()) {
         $dbMyClaims = \App\Models\FoodClaim::where('user_id', auth()->id())
@@ -27,7 +34,7 @@ Route::get('/', function () {
         'dbMyClaims' => $dbMyClaims,
         'dbActiveCampaigns' => $dbActiveCampaigns
     ]);
-});
+})->middleware(['auth', 'verified'])->name('home');
 
 // API Frontend: Tìm đồ ăn xung quanh
 Route::get('/api/nearby-food', [FoodPostController::class, 'getNearbyFood']);
@@ -80,7 +87,7 @@ Route::get('/dashboard', function () {
             : redirect()->route('charity.pending');
     } else {
         // personal or small_business
-        return redirect('/');
+        return redirect()->route('home');
     }
 })->middleware(['auth', 'verified'])->name('dashboard');
 
