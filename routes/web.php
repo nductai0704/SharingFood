@@ -158,3 +158,27 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__.'/auth.php';
+
+// --- QR Login Mock ---
+Route::get('/qr-scanner-mock', function () {
+    return Inertia::render('Auth/QrScannerMock');
+})->middleware('auth')->name('qr.scanner');
+
+Route::post('/qr-verify', function (\Illuminate\Http\Request $request) {
+    $request->validate(['token' => 'required|string']);
+    
+    // Broadcast sự kiện
+    broadcast(new \App\Events\QrLoginSuccessful($request->token, auth()->id()));
+    
+    return back()->with('status', 'Quét mã thành công! Trình duyệt bên kia đang đăng nhập...');
+})->middleware('auth')->name('qr.verify');
+
+// Bí mật: route để login nhanh từ QR (chỉ dùng cho Demo trên cùng 1 máy tính)
+Route::post('/qr-login-callback', function (\Illuminate\Http\Request $request) {
+    $request->validate(['user_id' => 'required|exists:users,id']);
+    
+    // Đăng nhập User ID này
+    auth()->loginUsingId($request->user_id);
+    
+    return redirect()->intended(route('dashboard'));
+})->name('qr.login.callback');

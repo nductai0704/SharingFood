@@ -97,208 +97,249 @@ const submit = () => {
 <template>
     <Head title="Đăng ký tài khoản - ShareFood" />
 
-    <div class="min-h-screen bg-gray-50 text-gray-800 font-sans flex flex-col justify-center items-center p-4 py-10">
-        <div class="w-full max-w-md bg-white border border-gray-100 rounded-3xl p-8 shadow-xl shadow-gray-100/70 space-y-6">
+    <div class="h-screen overflow-hidden bg-white text-gray-800 font-sans flex">
+        
+        <!-- CỘT TRÁI: HÌNH ẢNH & SLOGAN (Chỉ hiện trên PC) -->
+        <div class="hidden lg:flex lg:w-1/2 relative bg-emerald-900 overflow-hidden fixed h-screen top-0 left-0">
+            <!-- Ảnh nền chất lượng cao (ảnh đồ ăn từ thiện/chia sẻ) -->
+            <img src="https://images.pexels.com/photos/6995220/pexels-photo-6995220.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=2" alt="ShareFood Join" class="absolute inset-0 w-full h-full object-cover opacity-50 mix-blend-overlay hover:scale-105 transition-transform duration-1000">
             
-            <div class="flex flex-col items-center space-y-4 text-center">
-                <div class="flex items-center space-x-3">
-                    <div class="w-10 h-10 bg-emerald-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-md shadow-emerald-200">S</div>
-                    <span class="text-xl font-bold text-gray-950 tracking-tight">ShareFood<span class="text-emerald-600">.vn</span></span>
+            <!-- Hiệu ứng chuyển sắc Gradient -->
+            <div class="absolute inset-0 bg-gradient-to-t from-emerald-950 via-emerald-900/80 to-transparent"></div>
+            <div class="absolute inset-0 bg-gradient-to-r from-emerald-950/80 to-transparent"></div>
+            
+            <!-- Nội dung overlay -->
+            <div class="relative z-10 flex flex-col justify-end p-16 h-full text-white w-full">
+                <div class="flex items-center space-x-4 mb-8 animate-fade-in-up">
+                    <div class="w-16 h-16 bg-white/10 backdrop-blur-md rounded-2xl flex items-center justify-center text-white font-bold text-4xl border border-white/20 shadow-2xl">S</div>
+                    <span class="text-3xl font-bold text-white tracking-tight">ShareFood<span class="text-emerald-400">.vn</span></span>
                 </div>
-                <div class="space-y-1">
-                    <h1 class="text-2xl font-bold text-gray-950 tracking-tight">Đăng ký thành viên</h1>
-                    <p class="text-xs text-gray-500">Tham gia mạng lưới thực phẩm nhân ái không lãng phí</p>
-                </div>
-            </div>
-
-            <form @submit.prevent="submit" class="space-y-4">
+                <h2 class="text-5xl font-black tracking-tight leading-[1.1] mb-5 animate-fade-in-up" style="animation-delay: 0.1s">
+                    Trở thành một phần<br>
+                    <span class="text-emerald-400">của sự thay đổi.</span>
+                </h2>
+                <p class="text-lg text-emerald-100/90 max-w-md animate-fade-in-up leading-relaxed" style="animation-delay: 0.2s">
+                    Đăng ký tài khoản ngay hôm nay để bắt đầu hành trình sẻ chia thực phẩm, lan tỏa sự ấm áp đến với mọi người.
+                </p>
                 
-                <div class="space-y-1.5">
-                    <label for="role" class="text-xs font-semibold text-gray-700 tracking-wide">Bạn tham gia với tư cách nào?</label>
-                    <select 
-                        id="role" 
-                        v-model="form.role"
-                        required
-                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent cursor-pointer font-medium"
-                    >
-                        <option value="personal">Cá nhân (Nhận thực phẩm lẻ / Tặng đồ ăn lẻ)</option>
-                        <option value="charity">Tổ chức từ thiện (Cần duyệt minh chứng pháp lý)</option>
-                        <option value="small_business">Hộ kinh doanh nhỏ (Cửa hàng bánh, quán ăn...)</option>
-                    </select>
-                    <p v-if="form.errors.role" class="text-xs text-red-500 font-medium mt-1">{{ form.errors.role }}</p>
-                </div>
-
-                <div class="space-y-1.5">
-                    <label for="name" class="text-xs font-semibold text-gray-700 tracking-wide">
-                        {{ form.role === 'charity' ? 'Tên tổ chức từ thiện' : 'Họ và tên' }}
-                    </label>
-                    <input 
-                        id="name" 
-                        type="text" 
-                        v-model="form.name" 
-                        required 
-                        autocomplete="name"
-                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                        :placeholder="form.role === 'charity' ? 'Mái ấm tình thương Bình Thạnh...' : 'Nguyễn Văn A'"
-                    />
-                    <p v-if="form.errors.name" class="text-xs text-red-500 font-medium mt-1">{{ form.errors.name }}</p>
-                </div>
-
-                <div class="space-y-1.5">
-                    <label for="email" class="text-xs font-semibold text-gray-700 tracking-wide">Địa chỉ Email</label>
-                    <input 
-                        id="email" 
-                        type="email" 
-                        v-model="form.email" 
-                        required 
-                        autocomplete="username"
-                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                        placeholder="contact@domain.com"
-                    />
-                    <p v-if="form.errors.email" class="text-xs text-red-500 font-medium mt-1">{{ form.errors.email }}</p>
-                </div>
-
-                <div class="space-y-1.5">
-                    <label for="phone" class="text-xs font-semibold text-gray-700 tracking-wide">Số điện thoại</label>
-                    <input 
-                        id="phone" 
-                        type="tel" 
-                        v-model="form.phone" 
-                        required 
-                        autocomplete="tel"
-                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                        placeholder="09xxxxxxxx"
-                    />
-                    <p v-if="form.errors.phone" class="text-xs text-red-500 font-medium mt-1">{{ form.errors.phone }}</p>
-                </div>
-
-                <div class="space-y-1.5">
-                    <label for="address" class="text-xs font-semibold text-gray-700 tracking-wide">Địa chỉ chi tiết (Số nhà, tên đường...)</label>
-                    <input 
-                        id="address" 
-                        type="text" 
-                        v-model="form.address" 
-                        required 
-                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                        placeholder="Ví dụ: 123 Đường Nguyễn Trãi, Phường 2, Quận 5..."
-                    />
-                    <div class="flex justify-between items-center mt-1">
-                        <p v-if="form.errors.address" class="text-xs text-red-500 font-medium">{{ form.errors.address }}</p>
-                        <div v-else></div>
-                        <button 
-                            type="button" 
-                            @click="geocodeAddress" 
-                            class="text-[10px] text-emerald-600 hover:text-emerald-700 font-semibold focus:outline-none"
-                        >
-                            📍 Tìm tọa độ từ địa chỉ này
-                        </button>
+                <div class="flex flex-col space-y-4 mt-12 animate-fade-in-up" style="animation-delay: 0.3s">
+                    <div class="flex items-center space-x-3 text-emerald-200">
+                        <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span class="text-sm">Giải cứu thực phẩm dư thừa</span>
+                    </div>
+                    <div class="flex items-center space-x-3 text-emerald-200">
+                        <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span class="text-sm">Hỗ trợ các tổ chức từ thiện</span>
+                    </div>
+                    <div class="flex items-center space-x-3 text-emerald-200">
+                        <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                        <span class="text-sm">Kết nối cộng đồng nhân ái</span>
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <div class="space-y-1.5">
-                    <label for="password" class="text-xs font-semibold text-gray-700 tracking-wide">Mật khẩu bảo mật</label>
-                    <input 
-                        id="password" 
-                        type="password" 
-                        v-model="form.password" 
-                        required 
-                        autocomplete="new-password"
-                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                        placeholder="Tối thiểu 8 ký tự"
-                    />
-                    <p v-if="form.errors.password" class="text-xs text-red-500 font-medium mt-1">{{ form.errors.password }}</p>
+        <!-- CỘT PHẢI: FORM ĐĂNG KÝ -->
+        <!-- Đẩy cột phải sang một nửa trên PC bằng marginLeft -->
+        <div class="w-full lg:w-1/2 lg:ml-auto flex flex-col justify-center items-center p-4 sm:p-8 relative bg-gray-50/50 h-screen overflow-hidden">
+            <!-- Nút trang chủ góc phải -->
+            <Link href="/" class="absolute top-4 right-6 text-[11px] font-semibold text-gray-500 hover:text-emerald-600 flex items-center transition bg-white px-3 py-1.5 rounded-full shadow-sm border border-gray-100 z-20">
+                <svg class="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+                Về trang chủ
+            </Link>
+
+            <div class="w-full max-w-[560px] bg-white border border-gray-100 rounded-3xl p-6 shadow-2xl shadow-emerald-900/5 space-y-4 animate-fade-in z-10 relative">
+                
+                <div class="flex flex-col space-y-1">
+                    <div class="lg:hidden flex items-center space-x-2 mb-2 justify-center">
+                        <div class="w-8 h-8 bg-emerald-600 rounded-lg flex items-center justify-center text-white font-bold text-lg shadow-md shadow-emerald-200">S</div>
+                        <span class="text-lg font-bold text-gray-950 tracking-tight">ShareFood<span class="text-emerald-600">.vn</span></span>
+                    </div>
+                    <h1 class="text-2xl font-extrabold text-gray-900 tracking-tight text-center lg:text-left">Đăng ký thành viên</h1>
+                    <p class="text-[11px] text-gray-500 text-center lg:text-left">Cùng nhau tạo nên những bữa ăn ý nghĩa</p>
                 </div>
 
-                <div class="space-y-1.5">
-                    <label for="password_confirmation" class="text-xs font-semibold text-gray-700 tracking-wide">Xác nhận lại mật khẩu</label>
-                    <input 
-                        id="password_confirmation" 
-                        type="password" 
-                        v-model="form.password_confirmation" 
-                        required 
-                        autocomplete="new-password"
-                        class="w-full bg-gray-50 border border-gray-200 text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition"
-                        placeholder="Nhập lại mật khẩu"
-                    />
-                    <p v-if="form.errors.password_confirmation" class="text-xs text-red-500 font-medium mt-1">{{ form.errors.password_confirmation }}</p>
-                </div>
+                <form @submit.prevent="submit" class="space-y-3">
+                    
+                    <div class="space-y-1">
+                        <label for="role" class="text-[10px] font-bold text-gray-700 tracking-wide uppercase">Vai trò tham gia</label>
+                        <select 
+                            id="role" 
+                            v-model="form.role"
+                            required
+                            class="w-full bg-gray-50 border border-gray-200 text-xs text-gray-900 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 cursor-pointer font-medium transition shadow-sm"
+                        >
+                            <option value="personal">Cá nhân (Nhận thực phẩm / Tặng đồ ăn)</option>
+                            <option value="charity">Tổ chức từ thiện (Cần duyệt minh chứng)</option>
+                            <option value="small_business">Hộ kinh doanh nhỏ (Quán ăn, bakery...)</option>
+                        </select>
+                        <p v-if="form.errors.role" class="text-[10px] text-red-500 font-medium">{{ form.errors.role }}</p>
+                    </div>
 
-                <!-- ============================================= -->
-                <!-- KHỐI UPLOAD TÀI LIỆU - CHỈ HIỆN KHI ROLE = CHARITY -->
-                <!-- v-if kiểm tra điều kiện: chỉ khi người dùng chọn -->
-                <!-- vai trò "Tổ chức từ thiện" thì 2 ô upload mới xuất hiện -->
-                <!-- ============================================= -->
-                <div v-if="form.role === 'charity'" class="space-y-4 bg-amber-50/60 border border-amber-200/60 rounded-2xl p-4">
-                    <div class="flex items-start space-x-2">
-                        <span class="text-amber-600 text-lg leading-none">📋</span>
-                        <div class="space-y-0.5">
-                            <p class="text-xs font-bold text-amber-800">Minh chứng pháp lý bắt buộc</p>
-                            <p class="text-[11px] text-amber-700/80">Tài khoản từ thiện cần được Admin xác minh trước khi tạo chiến dịch. Vui lòng nộp đầy đủ 2 loại tài liệu dưới đây.</p>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="space-y-1">
+                            <label for="name" class="text-[10px] font-bold text-gray-700 tracking-wide uppercase">
+                                {{ form.role === 'charity' ? 'Tên tổ chức' : 'Họ và tên' }}
+                            </label>
+                            <input 
+                                id="name" 
+                                type="text" 
+                                v-model="form.name" 
+                                required 
+                                autocomplete="name"
+                                class="w-full bg-gray-50 border border-gray-200 text-xs text-gray-900 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-sm"
+                                :placeholder="form.role === 'charity' ? 'Mái ấm...' : 'Nguyễn Văn A'"
+                            />
+                            <p v-if="form.errors.name" class="text-[10px] text-red-500">{{ form.errors.name }}</p>
+                        </div>
+
+                        <div class="space-y-1">
+                            <label for="phone" class="text-[10px] font-bold text-gray-700 tracking-wide uppercase">Số điện thoại</label>
+                            <input 
+                                id="phone" 
+                                type="tel" 
+                                v-model="form.phone" 
+                                required 
+                                autocomplete="tel"
+                                class="w-full bg-gray-50 border border-gray-200 text-xs text-gray-900 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-sm"
+                                placeholder="09xx..."
+                            />
+                            <p v-if="form.errors.phone" class="text-[10px] text-red-500">{{ form.errors.phone }}</p>
+                        </div>
+
+                        <div class="space-y-1">
+                            <label for="email" class="text-[10px] font-bold text-gray-700 tracking-wide uppercase">Địa chỉ Email</label>
+                            <input 
+                                id="email" 
+                                type="email" 
+                                v-model="form.email" 
+                                required 
+                                autocomplete="username"
+                                class="w-full bg-gray-50 border border-gray-200 text-xs text-gray-900 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-sm"
+                                placeholder="contact@domain.com"
+                            />
+                            <p v-if="form.errors.email" class="text-[10px] text-red-500">{{ form.errors.email }}</p>
+                        </div>
+
+                        <div class="space-y-1">
+                            <label for="address" class="text-[10px] font-bold text-gray-700 tracking-wide uppercase">Địa chỉ chi tiết</label>
+                            <input 
+                                id="address" 
+                                type="text" 
+                                v-model="form.address" 
+                                required 
+                                class="w-full bg-gray-50 border border-gray-200 text-xs text-gray-900 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-sm"
+                                placeholder="Số nhà, đường, phường..."
+                            />
+                            <div class="flex justify-between items-center mt-0.5">
+                                <p v-if="form.errors.address" class="text-[9px] text-red-500">{{ form.errors.address }}</p>
+                                <div v-else></div>
+                                <button 
+                                    type="button" 
+                                    @click="geocodeAddress" 
+                                    class="text-[9px] text-emerald-600 hover:text-emerald-700 font-bold focus:outline-none transition"
+                                >
+                                    📍 Lấy tọa độ
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="space-y-1">
+                            <label for="password" class="text-[10px] font-bold text-gray-700 tracking-wide uppercase">Mật khẩu</label>
+                            <input 
+                                id="password" 
+                                type="password" 
+                                v-model="form.password" 
+                                required 
+                                autocomplete="new-password"
+                                class="w-full bg-gray-50 border border-gray-200 text-xs text-gray-900 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-sm"
+                                placeholder="••••••••"
+                            />
+                            <p v-if="form.errors.password" class="text-[10px] text-red-500">{{ form.errors.password }}</p>
+                        </div>
+
+                        <div class="space-y-1">
+                            <label for="password_confirmation" class="text-[10px] font-bold text-gray-700 tracking-wide uppercase">Xác nhận MK</label>
+                            <input 
+                                id="password_confirmation" 
+                                type="password" 
+                                v-model="form.password_confirmation" 
+                                required 
+                                autocomplete="new-password"
+                                class="w-full bg-gray-50 border border-gray-200 text-xs text-gray-900 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 transition shadow-sm"
+                                placeholder="••••••••"
+                            />
+                            <p v-if="form.errors.password_confirmation" class="text-[10px] text-red-500">{{ form.errors.password_confirmation }}</p>
                         </div>
                     </div>
 
-                    <!-- Upload: Giấy phép hoạt động -->
-                    <div class="space-y-1.5">
-                        <label class="text-xs font-semibold text-gray-700 tracking-wide">Giấy phép hoạt động <span class="text-red-500">*</span></label>
-                        <label class="flex items-center justify-center w-full border-2 border-dashed border-gray-300 hover:border-emerald-400 rounded-xl py-3 px-4 cursor-pointer transition bg-white group">
-                            <div class="flex items-center space-x-2 text-sm">
-                                <span class="text-gray-400 group-hover:text-emerald-500 transition">📄</span>
-                                <span class="text-gray-500 group-hover:text-gray-700 transition text-xs">
-                                    {{ licenseFileName || 'Chọn file PDF hoặc ảnh scan (tối đa 2MB)' }}
-                                </span>
-                            </div>
-                            <input 
-                                type="file" 
-                                class="hidden" 
-                                accept=".png,.jpg,.jpeg,.pdf"
-                                @change="handleLicenseFile"
-                            />
-                        </label>
-                        <p v-if="form.errors.legal_license" class="text-xs text-red-500 font-medium">{{ form.errors.legal_license }}</p>
+
+
+                    <!-- KHỐI UPLOAD TÀI LIỆU - CHARITY -->
+                    <div v-if="form.role === 'charity'" class="grid grid-cols-2 gap-3 bg-gradient-to-r from-amber-50 to-amber-100/50 border border-amber-200 rounded-2xl p-3 shadow-inner">
+                        <div class="space-y-1">
+                            <label class="text-[9px] font-bold text-gray-700 tracking-wide uppercase">Giấy phép HĐ <span class="text-red-500">*</span></label>
+                            <label class="flex items-center justify-center w-full border border-dashed border-amber-300 hover:border-amber-500 rounded-lg py-2 px-2 cursor-pointer transition bg-white/80 group">
+                                <div class="flex items-center space-x-1 text-xs">
+                                    <span class="text-amber-500 group-hover:scale-110 transition">📄</span>
+                                    <span class="text-gray-600 group-hover:text-gray-900 transition text-[9px] font-medium truncate max-w-[120px]">
+                                        {{ licenseFileName || 'Chọn file...' }}
+                                    </span>
+                                </div>
+                                <input type="file" class="hidden" accept=".png,.jpg,.jpeg,.pdf" @change="handleLicenseFile" />
+                            </label>
+                        </div>
+
+                        <div class="space-y-1">
+                            <label class="text-[9px] font-bold text-gray-700 tracking-wide uppercase">Ảnh cơ sở <span class="text-red-500">*</span></label>
+                            <label class="flex items-center justify-center w-full border border-dashed border-amber-300 hover:border-amber-500 rounded-lg py-2 px-2 cursor-pointer transition bg-white/80 group">
+                                <div class="flex items-center space-x-1 text-xs">
+                                    <span class="text-amber-500 group-hover:scale-110 transition">🏠</span>
+                                    <span class="text-gray-600 group-hover:text-gray-900 transition text-[9px] font-medium truncate max-w-[120px]">
+                                        {{ facilityFileName || 'Ảnh thực tế...' }}
+                                    </span>
+                                </div>
+                                <input type="file" class="hidden" accept=".png,.jpg,.jpeg,.pdf" @change="handleFacilityFile" />
+                            </label>
+                        </div>
                     </div>
 
-                    <!-- Upload: Hình ảnh cơ sở -->
-                    <div class="space-y-1.5">
-                        <label class="text-xs font-semibold text-gray-700 tracking-wide">Hình ảnh cơ sở thực tế <span class="text-red-500">*</span></label>
-                        <label class="flex items-center justify-center w-full border-2 border-dashed border-gray-300 hover:border-emerald-400 rounded-xl py-3 px-4 cursor-pointer transition bg-white group">
-                            <div class="flex items-center space-x-2 text-sm">
-                                <span class="text-gray-400 group-hover:text-emerald-500 transition">🏠</span>
-                                <span class="text-gray-500 group-hover:text-gray-700 transition text-xs">
-                                    {{ facilityFileName || 'Chọn ảnh chụp mặt tiền, phòng bếp... (tối đa 2MB)' }}
-                                </span>
-                            </div>
-                            <input 
-                                type="file" 
-                                class="hidden" 
-                                accept=".png,.jpg,.jpeg,.pdf"
-                                @change="handleFacilityFile"
-                            />
-                        </label>
-                        <p v-if="form.errors.facility_image" class="text-xs text-red-500 font-medium">{{ form.errors.facility_image }}</p>
+                    <div class="flex items-center space-x-2 text-[9px] font-medium text-gray-500 bg-gray-50 p-2 rounded-lg border border-gray-200 mt-1">
+                        <span :class="form.latitude ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-gray-300'" class="w-1.5 h-1.5 rounded-full transition-colors duration-500 flex-shrink-0"></span>
+                        <span>{{ form.latitude ? 'GPS OK' : 'Đang đợi tọa độ GPS...' }}</span>
+                    </div>
+
+                    <button 
+                        type="submit" 
+                        :disabled="form.processing"
+                        class="w-full bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 text-white font-bold text-xs py-3 rounded-xl shadow-lg shadow-emerald-500/30 transition-all duration-200 mt-2"
+                    >
+                        <span v-if="form.processing" class="flex items-center justify-center gap-2">
+                            <svg class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                            Đang xử lý dữ liệu...
+                        </span>
+                        <span v-else>Hoàn tất đăng ký tài khoản</span>
+                    </button>
+                </form>
+
+                <div class="relative py-2">
+                    <div class="absolute inset-0 flex items-center">
+                        <div class="w-full border-t border-gray-200"></div>
+                    </div>
+                    <div class="relative flex justify-center">
+                        <span class="bg-white px-3 text-[10px] text-gray-400 font-medium">HOẶC</span>
                     </div>
                 </div>
 
-                <div class="flex items-center space-x-2 text-[11px] text-gray-400 bg-gray-50 p-2 rounded-xl border border-dashed border-gray-200">
-                    <span :class="form.latitude ? 'bg-emerald-500 animate-pulse' : 'bg-gray-300'" class="w-1.5 h-1.5 rounded-full"></span>
-                    <span>{{ form.latitude ? 'Đã liên kết vị trí GPS thành công' : 'Đang yêu cầu tọa độ định vị...' }}</span>
-                </div>
-
-                <button 
-                    type="submit" 
-                    :disabled="form.processing"
-                    class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm py-3 px-4 rounded-xl shadow-md shadow-emerald-100 transition duration-200 disabled:opacity-50"
-                >
-                    <span v-if="form.processing">Đang tạo tài khoản...</span>
-                    <span v-else>Hoàn tất đăng ký</span>
-                </button>
-            </form>
-
-            <div class="h-px bg-gray-100 my-4"></div>
-
-            <p class="text-center text-xs text-gray-500">
-                Đã có tài khoản từ trước? 
-                <Link :href="route('login')" class="text-emerald-600 font-semibold hover:underline">Đăng nhập</Link>
-            </p>
+                <p class="text-center text-xs text-gray-600 font-medium">
+                    Đã có tài khoản? 
+                    <Link :href="route('login')" class="text-emerald-600 font-bold hover:text-emerald-700 hover:underline transition ml-1">Đăng nhập</Link>
+                </p>
+            </div>
+            
+            <!-- Hình tròn trang trí nổi mờ mờ ở góc -->
+            <div class="absolute -bottom-32 -left-32 w-64 h-64 bg-emerald-400/20 rounded-full blur-3xl pointer-events-none"></div>
+            <div class="absolute -top-32 -right-32 w-64 h-64 bg-teal-400/10 rounded-full blur-3xl pointer-events-none"></div>
         </div>
     </div>
 </template>
