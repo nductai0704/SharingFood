@@ -14,10 +14,22 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // Sử dụng Schema::table thay vì Schema::create để bổ sung cột vào bảng đã có
-        Schema::table('food_posts', function (Blueprint $table) {
-            $table->decimal('latitude', 10, 8)->nullable()->after('expires_at');
-            $table->decimal('longitude', 11, 8)->nullable()->after('latitude');
+        Schema::create('food_posts', function (Blueprint $table) {
+            $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('category_id')->nullable();
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->integer('original_quantity');
+            $table->integer('remain_quantity');
+            $table->string('unit');
+            $table->string('image_url')->nullable();
+            $table->timestamp('expires_at')->nullable();
+            $table->string('status')->default('available');
+            $table->string('ai_status')->default('safe');
+            $table->decimal('latitude', 10, 8)->nullable();
+            $table->decimal('longitude', 11, 8)->nullable();
+            $table->timestamps();
         });
     }
 
@@ -26,10 +38,7 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::table('food_posts', function (Blueprint $table) {
-            // Xóa 2 cột đã thêm nếu rollback
-            $table->dropColumn(['latitude', 'longitude']);
-        });
+        Schema::dropIfExists('food_posts');
     }
 
 };

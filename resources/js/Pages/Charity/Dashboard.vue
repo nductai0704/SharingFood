@@ -228,16 +228,89 @@ const savedShowMyPosts = sessionStorage.getItem('sf_showMyPosts');
 const showMyPosts = ref(savedShowMyPosts !== null ? savedShowMyPosts === 'true' : true);
 const currentTime = ref(new Date());
 let timeTicker = null;
+const countdowns = ref({});
+let countdownTicker = null;
+
+const startCountdowns = () => {
+    countdownTicker = setInterval(() => {
+        const now = new Date().getTime();
+        // Lấy danh sách các đơn đã duyệt (bài mình xin và bài người ta xin mình)
+        const allApproved = [
+            ...(page.props.auth.receivedClaims || []), 
+            ...myClaims.value
+        ].filter(c => c.status === 'approved' && c.expires_at);
+
+        const newCountdowns = { ...countdowns.value };
+        
+        allApproved.forEach(claim => {
+            const expireTime = new Date(claim.expires_at).getTime();
+            const distance = expireTime - now;
+
+            if (distance < 0) {
+                newCountdowns[claim.id] = '00:00';
+                // Tự động gọi API hủy (cần flag cờ để tránh gọi liên tục)
+                if (!claim._is_auto_cancelling) {
+                    claim._is_auto_cancelling = true;
+                    router.post(route('food-claims.cancel', claim.id), {
+                        cancel_reason: 'Hệ thống tự động hủy do người nhận không đến lấy (Quá hạn Timer)'
+                    }, {
+                        preserveScroll: true,
+                        onSuccess: () => fetchNearbyFood()
+                    });
+                }
+            } else {
+                const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+                const seconds = Math.floor((distance % (1000 * 60)) / 1000);
+                newCountdowns[claim.id] = `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+            }
+        });
+        
+        countdowns.value = newCountdowns;
+    }, 1000);
+};
 
 onMounted(() => {
     getUserLocation();
+    startCountdowns();
+    startNotificationPolling();
+    document.addEventListener('click', handleClickOutside);
     timeTicker = setInterval(() => {
         currentTime.value = new Date();
     }, 10000); // cập nhật mỗi 10 giây
+
+    // Lắng nghe real-time claim status updates qua Reverb
+    const userId = page.props.auth.user?.id;
+    if (userId && window.Echo) {
+        window.Echo.private(`user.${userId}`)
+            .listen('.claim.status.updated', (e) => {
+                // Cập nhật ngay lập tức khi nhận được sự kiện
+                router.reload({
+                    only: ['auth', 'dbMyClaims'],
+                    preserveState: true,
+                    preserveScroll: true
+                });
+                fetchNearbyFood();
+            });
+    }
+
+    window.addEventListener('claim-status-updated', () => {
+        router.reload({ only: ['dbMyClaims'] });
+        fetchNearbyFood();
+    });
 });
 
 onUnmounted(() => {
     if (timeTicker) clearInterval(timeTicker);
+    if (countdownTicker) clearInterval(countdownTicker);
+    stopNotificationPolling();
+    document.removeEventListener('click', handleClickOutside);
+    window.removeEventListener('claim-status-updated', () => {});
+
+    // Dọn dẹp Echo listener
+    const userId = page.props.auth.user?.id;
+    if (userId && window.Echo) {
+        window.Echo.leave(`user.${userId}`);
+    }
 });
 
 const activeNearbyPosts = computed(() => {
@@ -285,15 +358,140 @@ watch(() => page.props.auth.user, (newUser) => {
 
 const isNotificationOpen = ref(false);
 
-const pendingNotifications = computed(() => {
-    return page.props.auth.receivedClaims ? page.props.auth.receivedClaims.filter(c => c.status === 'pending') : [];
+const dismissedNotifications = ref(JSON.parse(localStorage.getItem('sf_dismissed_notifications') || '[]'));
+
+const lastOpenedNotificationTime = ref(localStorage.getItem('sf_last_opened_notifications') || '0');
+
+const unreadNotificationsCount = computed(() => {
+    return allNotifications.value.filter(item => {
+        const itemTime = new Date(item.created_at || item.claim.created_at).getTime();
+        const lastOpenedTime = new Date(lastOpenedNotificationTime.value).getTime();
+        return itemTime > lastOpenedTime;
+    }).length;
 });
+
+const toggleNotification = () => {
+    isNotificationOpen.value = !isNotificationOpen.value;
+    if (isNotificationOpen.value) {
+        const now = new Date().toISOString();
+        localStorage.setItem('sf_last_opened_notifications', now);
+        lastOpenedNotificationTime.value = now;
+    }
+};
+
+const notificationContainerRef = ref(null);
+
+const handleClickOutside = (event) => {
+    if (notificationContainerRef.value && !notificationContainerRef.value.contains(event.target)) {
+        isNotificationOpen.value = false;
+    }
+};
+
+const dismissNotification = (claimId, status) => {
+    dismissedNotifications.value.push(claimId + '_' + status);
+    localStorage.setItem('sf_dismissed_notifications', JSON.stringify(dismissedNotifications.value));
+};
+
+const allNotifications = computed(() => {
+    const list = [];
+    const userId = page.props.auth.user?.id;
+    if (!userId) return [];
+
+    // 1. Từ receivedClaims (Mình là Người Cho)
+    if (page.props.auth.receivedClaims) {
+        page.props.auth.receivedClaims.forEach(claim => {
+            if (dismissedNotifications.value.includes(claim.id + '_' + claim.status)) return;
+
+            if (claim.status === 'pending') {
+                list.push({
+                    id: claim.id,
+                    type: 'incoming_pending',
+                    title: 'Yêu cầu nhận mới',
+                    message: `👤 ${claim.user?.name} muốn nhận ${claim.quantity} ${claim.food_post?.unit} từ bài viết "${claim.food_post?.title}"`,
+                    claim: claim,
+                    created_at: claim.created_at
+                });
+            } else if (claim.status === 'cancelled' && claim.cancelled_by != userId) {
+                // Người nhận hoặc hệ thống hủy
+                const actor = claim.cancelled_by === 'system' ? 'Hệ thống' : (claim.user?.name || 'Người nhận');
+                list.push({
+                    id: claim.id,
+                    type: 'incoming_cancelled',
+                    title: 'Yêu cầu bị hủy',
+                    message: `❌ ${actor} đã hủy yêu cầu nhận từ bài viết "${claim.food_post?.title}" (Lý do: ${claim.cancel_reason || 'Không có lý do'})`,
+                    claim: claim,
+                    created_at: claim.updated_at || claim.created_at
+                });
+            }
+        });
+    }
+
+    // 2. Từ myClaims (Mình là Người Nhận)
+    const myClaimsList = page.props.auth.myClaims || [];
+    myClaimsList.forEach(claim => {
+        if (dismissedNotifications.value.includes(claim.id + '_' + claim.status)) return;
+
+        if (claim.status === 'approved') {
+            list.push({
+                id: claim.id,
+                type: 'outgoing_approved',
+                title: 'Yêu cầu được duyệt',
+                message: `✅ Yêu cầu nhận thực phẩm từ bài viết "${claim.food_post?.title}" đã được người cho phê duyệt! Vui lòng đến nhận hàng.`,
+                claim: claim,
+                created_at: claim.updated_at || claim.created_at
+            });
+        } else if (claim.status === 'rejected') {
+            list.push({
+                id: claim.id,
+                type: 'outgoing_rejected',
+                title: 'Yêu cầu bị từ chối',
+                message: `❌ Yêu cầu nhận thực phẩm từ bài viết "${claim.food_post?.title}" đã bị người cho từ chối (Lý do: ${claim.cancel_reason || 'Không có lý do'}).`,
+                claim: claim,
+                created_at: claim.updated_at || claim.created_at
+            });
+        } else if (claim.status === 'cancelled' && claim.cancelled_by != userId) {
+            // Người cho hoặc hệ thống hủy
+            const actor = claim.cancelled_by === 'system' ? 'Hệ thống' : 'Người cho';
+            list.push({
+                id: claim.id,
+                type: 'outgoing_cancelled',
+                title: 'Giao dịch bị hủy',
+                message: `❌ ${actor} đã hủy giao dịch đối với bài viết "${claim.food_post?.title}" (Lý do: ${claim.cancel_reason || 'Không có lý do'})`,
+                claim: claim,
+                created_at: claim.updated_at || claim.created_at
+            });
+        }
+    });
+
+    // Sắp xếp theo thời gian mới nhất
+    return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+});
+
+let notificationPollInterval = null;
+const startNotificationPolling = () => {
+    if (notificationPollInterval) return;
+    notificationPollInterval = setInterval(() => {
+        router.reload({
+            only: ['auth'],
+            preserveState: true,
+            preserveScroll: true
+        });
+    }, 5000); // 5 giây/lần để cập nhật trạng thái nhanh hơn
+};
+
+const stopNotificationPolling = () => {
+    if (notificationPollInterval) {
+        clearInterval(notificationPollInterval);
+        notificationPollInterval = null;
+    }
+};
 
 const handleUpdateClaimStatus = (claimId, status) => {
     router.post(route('food-claims.status', claimId), {
         status: status
     }, {
         preserveScroll: true,
+        preserveState: true,
         onSuccess: () => {
             fetchNearbyFood();
         }
@@ -301,11 +499,11 @@ const handleUpdateClaimStatus = (claimId, status) => {
 };
 
 // Quản lý yêu cầu của bản thân (myClaims)
-const myClaims = ref([...(props.dbMyClaims || [])]);
+const myClaims = ref([...(page.props.auth.myClaims || [])]);
 
-watch(() => props.dbMyClaims, (newVal) => {
+watch(() => page.props.auth.myClaims, (newVal) => {
     myClaims.value = [...(newVal || [])];
-}, { deep: true });
+}, { deep: true, immediate: true });
 
 const activeClaims = computed(() => {
     return myClaims.value.filter(claim => claim.status === 'pending' || claim.status === 'approved');
@@ -315,14 +513,103 @@ const approvedReceivedClaims = computed(() => {
     return page.props.auth.receivedClaims ? page.props.auth.receivedClaims.filter(c => c.status === 'approved') : [];
 });
 
-const handleCancelClaim = (claimId) => {
-    if (confirm('Bạn có chắc chắn muốn hủy yêu cầu nhận thực phẩm này?')) {
-        router.post(route('food-claims.cancel', claimId), {}, {
+const receiverCancelReasons = [
+    'Đổi phương thức nhận hàng',
+    'Bận đột xuất không đến được',
+    'Không liên lạc được với người cho',
+    'Lý do khác'
+];
+
+const giverCancelReasons = [
+    'Thực phẩm đã hỏng/hết hạn thực tế',
+    'Hết hàng/Số lượng thực tế không đủ',
+    'Người nhận không đến lấy đúng hẹn',
+    'Thông tin người nhận không chính xác',
+    'Lý do khác'
+];
+
+const showCancelModal = ref(false);
+const selectedCancelClaimId = ref(null);
+const isProcessing = ref(false);
+const cancelForm = ref({
+    reason: 'Đổi phương thức nhận hàng'
+});
+
+const openCancelModal = (claimId) => {
+    selectedCancelClaimId.value = claimId;
+    cancelForm.value.reason = 'Đổi phương thức nhận hàng';
+    showCancelModal.value = true;
+};
+
+const submitCancelClaim = () => {
+    if (selectedCancelClaimId.value) {
+        isProcessing.value = true;
+        router.post(route('food-claims.cancel', selectedCancelClaimId.value), {
+            cancel_reason: cancelForm.value.reason
+        }, {
             preserveScroll: true,
+            preserveState: true,
             onSuccess: () => {
+                showCancelModal.value = false;
+                selectedCancelClaimId.value = null;
                 fetchNearbyFood();
+            },
+            onFinish: () => {
+                isProcessing.value = false;
             }
         });
+    }
+};
+
+const showGiverCancelModal = ref(false);
+const selectedGiverClaimId = ref(null);
+const giverCancelForm = ref({
+    reason: 'Thực phẩm đã hỏng/hết hạn thực tế',
+    status: 'rejected'
+});
+
+const openGiverCancelModal = (claimId, status) => {
+    selectedGiverClaimId.value = claimId;
+    giverCancelForm.value.reason = 'Thực phẩm đã hỏng/hết hạn thực tế';
+    giverCancelForm.value.status = status;
+    showGiverCancelModal.value = true;
+};
+
+const submitGiverCancel = () => {
+    if (selectedGiverClaimId.value) {
+        isProcessing.value = true;
+        if (giverCancelForm.value.status === 'rejected') {
+            router.post(route('food-claims.status', selectedGiverClaimId.value), {
+                status: 'rejected',
+                cancel_reason: giverCancelForm.value.reason
+            }, {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    showGiverCancelModal.value = false;
+                    selectedGiverClaimId.value = null;
+                    fetchNearbyFood();
+                },
+                onFinish: () => {
+                    isProcessing.value = false;
+                }
+            });
+        } else {
+            router.post(route('food-claims.cancel', selectedGiverClaimId.value), {
+                cancel_reason: giverCancelForm.value.reason
+            }, {
+                preserveScroll: true,
+                preserveState: true,
+                onSuccess: () => {
+                    showGiverCancelModal.value = false;
+                    selectedGiverClaimId.value = null;
+                    fetchNearbyFood();
+                },
+                onFinish: () => {
+                    isProcessing.value = false;
+                }
+            });
+        }
     }
 };
 
@@ -358,11 +645,25 @@ const handleCompleteClaim = (claimId) => {
 
 // Modal yêu cầu nhận thực phẩm
 const selectedClaimPost = ref(null);
-const claimQuantity = ref(1);
+const claimForm = ref({
+    quantity: 1,
+    shipping_method: 'self_pickup',
+    pickup_contact_name: '',
+    pickup_contact_phone: '',
+    delivery_service_company: '',
+    driver_license_plate: ''
+});
 
 const openClaimModal = (post) => {
     selectedClaimPost.value = post;
-    claimQuantity.value = 1;
+    claimForm.value = {
+        quantity: 1,
+        shipping_method: 'self_pickup',
+        pickup_contact_name: '',
+        pickup_contact_phone: '',
+        delivery_service_company: '',
+        driver_license_plate: ''
+    };
 };
 
 const closeClaimModal = () => {
@@ -371,9 +672,7 @@ const closeClaimModal = () => {
 
 const submitClaim = () => {
     if (!selectedClaimPost.value) return;
-    router.post(route('food-posts.claim', selectedClaimPost.value.id), {
-        quantity: claimQuantity.value
-    }, {
+    router.post(route('food-posts.claim', selectedClaimPost.value.id), claimForm.value, {
         onSuccess: () => {
             closeClaimModal();
             fetchNearbyFood();
@@ -422,75 +721,92 @@ const submitClaim = () => {
               </Link>
 
               <!-- Notification Bell Icon (Next to logout) -->
-              <div class="relative">
+              <div class="relative" ref="notificationContainerRef">
                 <button 
-                  @click="isNotificationOpen = !isNotificationOpen"
+                  @click="toggleNotification" 
                   class="relative p-2 text-gray-500 hover:text-emerald-600 focus:outline-none transition rounded-full hover:bg-gray-50 cursor-pointer"
                 >
-                  <!-- Bell SVG -->
                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
                   </svg>
-                  
-                  <!-- Red Badge count -->
+                  <!-- Badge số lượng thông báo chưa xem -->
                   <span 
-                    v-if="pendingNotifications.length > 0" 
+                    v-if="unreadNotificationsCount > 0" 
                     class="absolute top-1 right-1 bg-red-500 text-white text-[8px] font-bold w-4 h-4 rounded-full flex items-center justify-center border border-white"
                   >
-                    {{ pendingNotifications.length }}
+                    {{ unreadNotificationsCount }}
                   </span>
                 </button>
-                
-                <!-- Dropdown Menu -->
+
+                <!-- Dropdown thông báo -->
                 <div 
                   v-if="isNotificationOpen" 
                   class="absolute right-0 mt-2 w-80 bg-white border border-gray-100 rounded-2xl shadow-xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150"
                 >
                   <div class="p-3 border-b border-gray-50 flex justify-between items-center bg-gray-50/50">
-                    <span class="text-xs font-bold text-gray-800">Thông báo mới</span>
-                    <span class="text-[10px] text-gray-400 font-medium">{{ pendingNotifications.length }} yêu cầu chưa duyệt</span>
+                    <span class="text-xs font-bold text-gray-800">Thông báo hệ thống</span>
+                    <span class="text-[10px] text-gray-400 font-medium">{{ allNotifications.length }} thông báo mới</span>
                   </div>
-                  
                   <div class="max-h-72 overflow-y-auto divide-y divide-gray-50">
-                    <div 
-                      v-if="pendingNotifications.length === 0" 
-                      class="p-4 text-center text-gray-400 text-xs"
-                    >
-                      Không có thông báo nào mới.
+                    <div v-if="allNotifications.length === 0" class="p-4 text-center text-gray-400 text-xs">
+                      Không có thông báo nào.
                     </div>
-                    
                     <div 
-                      v-else
-                      v-for="claim in pendingNotifications" 
-                      :key="claim.id"
+                      v-else 
+                      v-for="item in allNotifications" 
+                      :key="item.type + '-' + item.id" 
                       class="p-3 hover:bg-gray-50/50 space-y-2 transition text-xs"
                     >
                       <div class="flex justify-between items-start gap-1">
-                        <p class="text-gray-700 leading-normal text-left">
-                          👤 <span class="font-bold text-gray-900">{{ claim.user?.name }}</span> 
-                          đã xin nhận <span class="font-bold text-emerald-600">{{ claim.quantity }} {{ claim.food_post?.unit }}</span> 
-                          từ bài viết <b>"{{ claim.food_post?.title }}"</b>
-                        </p>
-                      </div>
-                      
-                      <div class="flex justify-between items-center text-[10px] text-gray-400">
-                        <span>{{ new Date(claim.created_at).toLocaleString('vi-VN') }}</span>
-                      </div>
+                        <div class="text-gray-700 leading-normal text-left space-y-1 w-full">
+                          <!-- Tiêu đề & Loại thông báo -->
+                          <div class="flex justify-between items-center">
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" v-if="item.type === 'incoming_pending'">Yêu cầu mới</span>
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'incoming_cancelled' || item.type === 'outgoing_cancelled'">Đã huỷ</span>
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" v-else-if="item.type === 'outgoing_approved'">Đã duyệt</span>
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'outgoing_rejected'">Từ chối</span>
+                          </div>
 
-                      <!-- Hành động phê duyệt / từ chối trong thông báo -->
+                          <p class="text-gray-800 text-xs">{{ item.message }}</p>
+
+                          <!-- Hiển thị phương thức lấy hàng cho Incoming Pending -->
+                          <div v-if="item.type === 'incoming_pending'" class="text-[10px] text-gray-500 bg-gray-50 p-1.5 rounded border border-gray-100/50 mt-1">
+                            🚚 <b>Cách nhận:</b>
+                            <span v-if="item.claim.shipping_method === 'self_pickup'" class="text-blue-600 font-semibold ml-1">Tự đến lấy</span>
+                            <span v-else-if="item.claim.shipping_method === 'relative_pickup'" class="text-indigo-600 font-semibold ml-1">Nhờ người thân lấy ({{ item.claim.pickup_contact_name }})</span>
+                            <span v-else-if="item.claim.shipping_method === 'delivery_service'" class="text-orange-600 font-semibold ml-1">Giao hàng ({{ item.claim.delivery_service_company }})</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div class="flex justify-between items-center text-[10px] text-gray-400">
+                        <span>{{ new Date(item.created_at).toLocaleString('vi-VN') }}</span>
+                      </div>
+                      <!-- Các nút thao tác -->
                       <div class="flex items-center gap-2 pt-1">
-                        <button 
-                          @click="handleUpdateClaimStatus(claim.id, 'approved')"
-                          class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1 rounded-lg transition text-center cursor-pointer shadow-sm shadow-emerald-100 hover:shadow-emerald-200"
-                        >
-                          Duyệt
-                        </button>
-                        <button 
-                          @click="handleUpdateClaimStatus(claim.id, 'rejected')"
-                          class="flex-1 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 font-semibold text-[10px] py-1 rounded-lg border border-gray-200 hover:border-red-100 transition text-center cursor-pointer"
-                        >
-                          Từ chối
-                        </button>
+                        <!-- Yêu cầu mới cần Duyệt / Từ chối -->
+                        <template v-if="item.type === 'incoming_pending'">
+                          <button 
+                            @click.stop="handleUpdateClaimStatus(item.id, 'approved')" 
+                            class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1 rounded-lg transition text-center cursor-pointer shadow-sm shadow-emerald-100 hover:shadow-emerald-200"
+                          >
+                            Duyệt
+                          </button>
+                          <button 
+                            @click.stop="openGiverCancelModal(item.id, 'rejected')" 
+                            class="flex-1 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 font-semibold text-[10px] py-1 rounded-lg border border-gray-200 hover:border-red-100 transition text-center cursor-pointer"
+                          >
+                            Từ chối
+                          </button>
+                        </template>
+                        <!-- Các thông báo khác chỉ cần nút Đóng (Dismiss) -->
+                        <template v-else>
+                          <button 
+                            @click.stop="dismissNotification(item.id, item.claim.status)" 
+                            class="w-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[10px] py-1.5 rounded-lg transition text-center cursor-pointer"
+                          >
+                            Đóng thông báo
+                          </button>
+                        </template>
                       </div>
                     </div>
                   </div>
@@ -771,8 +1087,8 @@ const submitClaim = () => {
                         {{ $page.props.auth.user.name ? $page.props.auth.user.name.charAt(0) : 'T' }}
                       </div>
                       <div>
-                        <p class="text-[10px] text-gray-400 font-medium leading-none mb-1">Chiến dịch của bạn</p>
-                        <p class="text-[12px] font-bold text-blue-700 leading-none truncate max-w-[120px]">{{ $page.props.auth.user.name }}</p>
+                        <p class="text-[10px] text-gray-400 font-medium leading-tight mb-0.5">Chiến dịch của bạn</p>
+                        <p class="text-[12px] font-bold text-blue-700 leading-tight pb-0.5 truncate max-w-[120px]">{{ $page.props.auth.user.name }}</p>
                       </div>
                     </div>
                     <span 
@@ -876,8 +1192,8 @@ const submitClaim = () => {
                   :key="'outgoing-' + claim.id" 
                   class="p-3 bg-emerald-50/20 rounded-2xl border border-emerald-100/30 space-y-2 text-xs"
                 >
-                  <div class="flex justify-between items-start gap-2">
-                    <div class="font-bold text-gray-900 line-clamp-1 flex-1 text-left">
+                  <div class="flex justify-between items-start gap-2 relative">
+                    <div class="font-bold text-gray-900 line-clamp-1 flex-1 text-left pr-16">
                       {{ claim.food_post?.title || 'Thực phẩm' }}
                     </div>
                     <span class="bg-emerald-50 text-emerald-700 border-emerald-100 text-[9px] px-1.5 py-0.5 rounded border font-bold shrink-0">
@@ -897,7 +1213,12 @@ const submitClaim = () => {
                       <span>Thông tin liên hệ sẽ hiển thị sau khi chủ nhà phê duyệt.</span>
                     </div>
                     <!-- Trạng thái Đã duyệt -->
-                    <div v-else-if="claim.status === 'approved'" class="bg-emerald-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1">
+                    <div v-else-if="claim.status === 'approved'" class="bg-emerald-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1 relative">
+                      <!-- Badge Countdown -->
+                      <div v-if="countdowns[claim.id]" class="absolute top-2 right-2 bg-red-100/90 text-red-600 border border-red-200 font-bold px-2 py-1 rounded-lg text-[10px] animate-pulse shadow-sm flex items-center gap-1">
+                          <span>⏳</span><span>{{ countdowns[claim.id] }}</span>
+                      </div>
+                      
                       <p>👤 <b>Người cho:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.name }}</span></p>
                       <p>📞 <b>SĐT người cho:</b> <a :href="'tel:' + claim.food_post?.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ claim.food_post?.user?.phone || 'Chưa cập nhật' }}</a></p>
                       <p>📍 <b>Địa chỉ lấy đồ:</b> <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.address || 'Chưa cập nhật' }}</span></p>
@@ -915,7 +1236,7 @@ const submitClaim = () => {
                   <!-- Nút Hủy giao dịch (Cancel Claim) - Dành cho người nhận -->
                   <div class="flex justify-end pt-1">
                     <button 
-                      @click="handleCancelClaim(claim.id)" 
+                      @click="openCancelModal(claim.id)" 
                       class="bg-white hover:bg-red-50 text-red-600 hover:text-red-700 font-bold text-[10px] px-3 py-1.5 rounded-lg border border-gray-200 hover:border-red-100 transition cursor-pointer shadow-sm"
                     >
                       Hủy yêu cầu
@@ -934,13 +1255,15 @@ const submitClaim = () => {
                   :key="'incoming-' + claim.id" 
                   class="p-3 bg-blue-50/20 rounded-2xl border border-blue-100/30 space-y-2 text-xs"
                 >
-                  <div class="flex justify-between items-start gap-2">
-                    <div class="font-bold text-gray-900 line-clamp-1 flex-1 text-left">
+                  <div class="flex justify-between items-start gap-2 relative">
+                    <div class="font-bold text-gray-900 line-clamp-1 flex-1 text-left pr-16">
                       {{ claim.food_post?.title || 'Thực phẩm' }}
                     </div>
-                    <span class="bg-blue-50 text-blue-700 border-blue-100 text-[9px] px-1.5 py-0.5 rounded border font-bold shrink-0">
-                      Chờ lấy đồ
-                    </span>
+                    
+                    <!-- Countdown cho người duyệt (Người cho) -->
+                    <div v-if="countdowns[claim.id]" class="absolute top-0 right-0 bg-red-100/90 text-red-600 border border-red-200 font-bold px-2 py-1 rounded-lg text-[10px] animate-pulse shadow-sm flex items-center gap-1">
+                        <span>⏳</span><span>{{ countdowns[claim.id] }}</span>
+                    </div>
                   </div>
 
                   <p class="text-gray-700 leading-normal text-left text-[11px]">
@@ -950,6 +1273,22 @@ const submitClaim = () => {
                   <div class="bg-gray-50 p-2 rounded-xl text-gray-600 text-[11px] space-y-0.5 text-left">
                     <p>📞 <b>SĐT người xin:</b> <a :href="'tel:' + claim.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ claim.user?.phone || 'Chưa cập nhật' }}</a></p>
                     <p>📍 <b>Địa chỉ:</b> <span class="font-semibold text-gray-800">{{ claim.user?.address || 'Chưa cập nhật' }}</span></p>
+                    
+                    <!-- Nhãn Phương thức nhận hàng trực quan cho Người Cho đối soát -->
+                    <div class="pt-1 mt-1 border-t border-gray-100">
+                      <p>🚚 <b>Phương thức lấy đồ:</b></p>
+                      <div class="mt-1 flex flex-col gap-1 text-[10px]">
+                        <span v-if="claim.shipping_method === 'self_pickup'" class="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 rounded-md font-semibold w-fit">Tự đến lấy</span>
+                        <div v-else-if="claim.shipping_method === 'relative_pickup'" class="bg-indigo-50 text-indigo-700 p-1.5 rounded-md border border-indigo-100">
+                          <span class="font-semibold block mb-0.5">Nhờ người thân lấy hộ</span>
+                          Tên: <b>{{ claim.pickup_contact_name }}</b> - SĐT: <b>{{ claim.pickup_contact_phone }}</b>
+                        </div>
+                        <div v-else-if="claim.shipping_method === 'delivery_service'" class="bg-orange-50 text-orange-700 p-1.5 rounded-md border border-orange-100">
+                          <span class="font-semibold block mb-0.5">Dịch vụ Giao hàng</span>
+                          Hãng: <b>{{ claim.delivery_service_company }}</b> - Biển số: <b>{{ claim.driver_license_plate }}</b>
+                        </div>
+                      </div>
+                    </div>
                   </div>
 
                   <!-- Các nút thao tác dành cho người cho để kết thúc giao dịch -->
@@ -961,7 +1300,7 @@ const submitClaim = () => {
                       Đã lấy đồ
                     </button>
                     <button 
-                      @click="handleCancelClaim(claim.id)" 
+                      @click="openGiverCancelModal(claim.id, 'cancelled')" 
                       class="flex-1 bg-white hover:bg-red-50 text-red-600 hover:text-red-700 font-semibold text-[10px] py-1.5 rounded-lg border border-gray-200 hover:border-red-100 transition text-center cursor-pointer"
                     >
                       Hủy giao dịch
@@ -976,8 +1315,8 @@ const submitClaim = () => {
     </main>
 
     <!-- Modal xác nhận Yêu cầu nhận thực phẩm lẻ -->
-    <div v-if="selectedClaimPost" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div class="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-gray-100/50 animate-in fade-in zoom-in-95 duration-200">
+    <div v-if="selectedClaimPost" class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+      <div class="bg-white rounded-3xl w-full max-w-md overflow-hidden shadow-2xl border border-gray-100/50 animate-in zoom-in-95 duration-200">
         <!-- Header -->
         <div class="bg-gradient-to-br from-emerald-600 to-teal-700 p-5 text-white relative">
           <button @click="closeClaimModal" class="absolute top-4 right-4 text-white/80 hover:text-white bg-white/10 hover:bg-white/20 p-1.5 rounded-full transition cursor-pointer">
@@ -1000,34 +1339,90 @@ const submitClaim = () => {
           </div>
 
           <!-- Nhập số lượng -->
-          <div class="space-y-2">
+          <div class="space-y-2 text-left">
             <label class="block text-xs font-bold text-gray-700 uppercase tracking-wide">Số lượng bạn cần xin nhận</label>
             <div class="flex items-center space-x-3">
               <button 
                 type="button"
-                @click="claimQuantity > 1 ? claimQuantity-- : null"
+                @click="claimForm.quantity > 1 ? claimForm.quantity-- : null"
                 class="w-10 h-10 bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-600 font-bold rounded-xl transition flex items-center justify-center text-lg select-none cursor-pointer"
               >
                 -
               </button>
               <input 
                 type="number" 
-                v-model.number="claimQuantity" 
+                v-model.number="claimForm.quantity" 
                 min="1" 
                 :max="selectedClaimPost.remain_quantity"
                 class="flex-1 text-center font-bold text-gray-800 bg-gray-50 border border-gray-200 rounded-xl py-2 focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 text-sm"
               />
               <button 
                 type="button"
-                @click="claimQuantity < selectedClaimPost.remain_quantity ? claimQuantity++ : null"
+                @click="claimForm.quantity < selectedClaimPost.remain_quantity ? claimForm.quantity++ : null"
                 class="w-10 h-10 bg-gray-100 hover:bg-gray-200 active:scale-95 text-gray-600 font-bold rounded-xl transition flex items-center justify-center text-lg select-none cursor-pointer"
               >
                 +
               </button>
             </div>
-            <p v-if="claimQuantity > selectedClaimPost.remain_quantity" class="text-[10px] text-red-500 font-semibold">
+            <p v-if="claimForm.quantity > selectedClaimPost.remain_quantity" class="text-[10px] text-red-500 font-semibold">
               Số lượng vượt quá tồn kho khả dụng!
             </p>
+          </div>
+
+          <!-- Phương thức nhận hàng -->
+          <div class="space-y-2 text-left pt-2">
+            <label class="block text-xs font-bold text-gray-700 uppercase tracking-wider">Phương thức nhận hàng:</label>
+            <div class="grid gap-2 mt-2">
+                <!-- Tự đến lấy -->
+                <div 
+                    @click="claimForm.shipping_method = 'self_pickup'"
+                    class="p-3.5 rounded-2xl border text-xs font-semibold transition cursor-pointer flex items-center gap-3"
+                    :class="claimForm.shipping_method === 'self_pickup' ? 'border-emerald-500 bg-emerald-50 text-emerald-800 shadow-sm ring-1 ring-emerald-500' : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-emerald-300'"
+                >
+                    <div class="w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition" :class="claimForm.shipping_method === 'self_pickup' ? 'border-emerald-500 bg-emerald-500' : 'border-gray-400 bg-white'">
+                        <div v-if="claimForm.shipping_method === 'self_pickup'" class="w-1.5 h-1.5 bg-white rounded-full animate-in zoom-in"></div>
+                    </div>
+                    <span class="flex-1">Tôi sẽ tự đến lấy</span>
+                    <svg v-if="claimForm.shipping_method === 'self_pickup'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-emerald-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                </div>
+                
+                <!-- Nhờ lấy hộ -->
+                <div 
+                    @click="claimForm.shipping_method = 'relative_pickup'"
+                    class="p-3.5 rounded-2xl border text-xs font-semibold transition cursor-pointer flex items-center gap-3"
+                    :class="claimForm.shipping_method === 'relative_pickup' ? 'border-indigo-500 bg-indigo-50 text-indigo-800 shadow-sm ring-1 ring-indigo-500' : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-indigo-300'"
+                >
+                    <div class="w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition" :class="claimForm.shipping_method === 'relative_pickup' ? 'border-indigo-500 bg-indigo-500' : 'border-gray-400 bg-white'">
+                        <div v-if="claimForm.shipping_method === 'relative_pickup'" class="w-1.5 h-1.5 bg-white rounded-full animate-in zoom-in"></div>
+                    </div>
+                    <span class="flex-1">Nhờ người thân / bạn bè lấy hộ</span>
+                    <svg v-if="claimForm.shipping_method === 'relative_pickup'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-indigo-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                </div>
+
+                <!-- Giao hàng -->
+                <div 
+                    @click="claimForm.shipping_method = 'delivery_service'"
+                    class="p-3.5 rounded-2xl border text-xs font-semibold transition cursor-pointer flex items-center gap-3"
+                    :class="claimForm.shipping_method === 'delivery_service' ? 'border-orange-500 bg-orange-50 text-orange-800 shadow-sm ring-1 ring-orange-500' : 'border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 hover:border-orange-300'"
+                >
+                    <div class="w-4 h-4 rounded-full border flex items-center justify-center shrink-0 transition" :class="claimForm.shipping_method === 'delivery_service' ? 'border-orange-500 bg-orange-500' : 'border-gray-400 bg-white'">
+                        <div v-if="claimForm.shipping_method === 'delivery_service'" class="w-1.5 h-1.5 bg-white rounded-full animate-in zoom-in"></div>
+                    </div>
+                    <span class="flex-1">Gọi dịch vụ giao hàng (Grab, XanhSM...)</span>
+                    <svg v-if="claimForm.shipping_method === 'delivery_service'" xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-orange-600" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                </div>
+            </div>
+          </div>
+
+          <!-- Các ô nhập liệu mở rộng (hiển thị động theo phương thức) -->
+          <div v-if="claimForm.shipping_method === 'relative_pickup'" class="grid grid-cols-2 gap-3 mt-2">
+              <input type="text" v-model="claimForm.pickup_contact_name" placeholder="Tên người lấy hộ" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
+              <input type="text" v-model="claimForm.pickup_contact_phone" placeholder="SĐT liên hệ" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
+          </div>
+
+          <div v-if="claimForm.shipping_method === 'delivery_service'" class="grid grid-cols-2 gap-3 mt-2">
+              <input type="text" v-model="claimForm.delivery_service_company" placeholder="Hãng xe (VD: Grab)" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
+              <input type="text" v-model="claimForm.driver_license_plate" placeholder="Biển số xe" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
           </div>
         </div>
 
@@ -1038,13 +1433,79 @@ const submitClaim = () => {
           </button>
           <button 
             @click="submitClaim" 
-            :disabled="claimQuantity < 1 || claimQuantity > selectedClaimPost.remain_quantity"
+            :disabled="claimForm.quantity < 1 || claimForm.quantity > selectedClaimPost.remain_quantity"
             class="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 disabled:opacity-50 disabled:pointer-events-none text-white font-bold text-xs rounded-xl shadow-md shadow-emerald-100 hover:shadow-emerald-200 transition active:scale-95 cursor-pointer"
           >
-            Gửi yêu cầu
+            Xác nhận gửi
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- MODAL HỦY YÊU CẦU -->
+    <div 
+      v-if="showCancelModal" 
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+    >
+        <div class="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-gray-100">
+            <h3 class="text-lg font-extrabold text-gray-900 mb-2">Hủy yêu cầu</h3>
+            <p class="text-xs text-gray-500 mb-4">Vui lòng chọn lý do hủy để chúng tôi hỗ trợ tốt hơn:</p>
+            
+            <div class="space-y-2 mb-6">
+                <div 
+                    v-for="opt in receiverCancelReasons" 
+                    :key="opt"
+                    @click="cancelForm.reason = opt"
+                    class="p-3.5 rounded-2xl border text-xs font-semibold transition cursor-pointer flex items-center justify-between"
+                    :class="cancelForm.reason === opt ? 'border-red-500 bg-red-50/50 text-red-700 shadow-sm shadow-red-100' : 'border-gray-100 bg-gray-50 hover:bg-gray-100 text-gray-700'"
+                >
+                    <span>{{ opt }}</span>
+                    <span v-if="cancelForm.reason === opt" class="text-red-500 font-bold">✓</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <button @click="showCancelModal = false" :disabled="isProcessing" class="flex-1 px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition disabled:opacity-50">Đóng</button>
+                <button @click="submitCancelClaim" :disabled="isProcessing" class="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 shadow-md shadow-red-500/30 transition disabled:opacity-50 flex justify-center items-center gap-2">
+                  <svg v-if="isProcessing" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  <span>{{ isProcessing ? 'Đang xử lý...' : 'Xác nhận Hủy' }}</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL TỪ CHỐI / HỦY YÊU CẦU (DÀNH CHO NGƯỜI CHO) -->
+    <div 
+      v-if="showGiverCancelModal" 
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+    >
+        <div class="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-gray-100 text-left">
+            <h3 class="text-lg font-extrabold text-gray-900 mb-2">
+              {{ giverCancelForm.status === 'rejected' ? 'Từ chối yêu cầu' : 'Hủy giao dịch' }}
+            </h3>
+            <p class="text-xs text-gray-500 mb-4">Vui lòng chọn lý do để người nhận biết thông tin:</p>
+            
+            <div class="space-y-2 mb-6">
+                <div 
+                    v-for="opt in giverCancelReasons" 
+                    :key="opt"
+                    @click="giverCancelForm.reason = opt"
+                    class="p-3.5 rounded-2xl border text-xs font-semibold transition cursor-pointer flex items-center justify-between"
+                    :class="giverCancelForm.reason === opt ? 'border-red-500 bg-red-50/50 text-red-700 shadow-sm shadow-red-100' : 'border-gray-100 bg-gray-50 hover:bg-gray-100 text-gray-700'"
+                >
+                    <span>{{ opt }}</span>
+                    <span v-if="giverCancelForm.reason === opt" class="text-red-500 font-bold">✓</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <button @click="showGiverCancelModal = false" :disabled="isProcessing" class="flex-1 px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition text-center disabled:opacity-50">Đóng</button>
+                <button @click="submitGiverCancel" :disabled="isProcessing" class="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 shadow-md shadow-red-500/30 transition text-center disabled:opacity-50 flex justify-center items-center gap-2">
+                  <svg v-if="isProcessing" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  <span>{{ isProcessing ? 'Đang xử lý...' : 'Xác nhận' }}</span>
+                </button>
+            </div>
+        </div>
     </div>
   </div>
 </template>

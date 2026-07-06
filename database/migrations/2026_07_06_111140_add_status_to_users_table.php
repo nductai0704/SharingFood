@@ -11,12 +11,10 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('categories', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('icon')->nullable();
-            $table->boolean('is_allowed')->default(1);
-            $table->timestamps();
+        Schema::table('users', function (Blueprint $table) {
+            if (!Schema::hasColumn('users', 'status')) {
+                $table->string('status')->default('verified')->after('role');
+            }
         });
     }
 
@@ -25,6 +23,8 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('categories');
+        Schema::table('users', function (Blueprint $table) {
+            $table->dropColumn('status');
+        });
     }
 };

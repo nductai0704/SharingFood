@@ -10,7 +10,21 @@ class FoodClaim extends Model
         'food_post_id',
         'user_id',
         'quantity',
-        'status'
+        'status',
+        'shipping_method',
+        'pickup_contact_name',
+        'pickup_contact_phone',
+        'delivery_service_company',
+        'driver_license_plate',
+        'cancel_reason',
+        'cancelled_by',
+        'approved_at',
+        'expires_at'
+    ];
+
+    protected $casts = [
+        'approved_at' => 'datetime',
+        'expires_at' => 'datetime',
     ];
 
     public function user()

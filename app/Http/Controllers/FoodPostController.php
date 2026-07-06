@@ -151,14 +151,19 @@ class FoodPostController extends Controller
     public function claim(Request $request, $id)
     {
         $request->validate([
-            'quantity' => 'required|integer|min:1'
+            'quantity' => 'required|integer|min:1',
+            'shipping_method' => 'nullable|string',
+            'pickup_contact_name' => 'nullable|string',
+            'pickup_contact_phone' => 'nullable|string',
+            'delivery_service_company' => 'nullable|string',
+            'driver_license_plate' => 'nullable|string',
         ]);
         
         $requestedQty = $request->input('quantity');
         $user = auth()->user();
         
         try {
-            $result = \DB::transaction(function() use ($id, $requestedQty, $user) {
+            $result = \DB::transaction(function() use ($id, $requestedQty, $user, $request) {
                 // Pessimistic Locking (Khóa dòng dữ liệu để chống tranh giành)
                 $post = FoodPost::lockForUpdate()->findOrFail($id);
                 
@@ -190,6 +195,11 @@ class FoodPostController extends Controller
                     'user_id' => $user->id,
                     'quantity' => $requestedQty,
                     'status' => 'pending',
+                    'shipping_method' => $request->input('shipping_method', 'self_pickup'),
+                    'pickup_contact_name' => $request->input('pickup_contact_name'),
+                    'pickup_contact_phone' => $request->input('pickup_contact_phone'),
+                    'delivery_service_company' => $request->input('delivery_service_company'),
+                    'driver_license_plate' => $request->input('driver_license_plate'),
                 ]);
                 
                 // Nhật ký hệ thống
@@ -224,10 +234,11 @@ class FoodPostController extends Controller
         ]);
         
         $newStatus = $request->input('status');
+        $cancelReason = $request->input('cancel_reason', 'Người chia sẻ từ chối/hủy yêu cầu');
         $user = auth()->user();
         
         try {
-            $result = \DB::transaction(function() use ($claimId, $newStatus, $user) {
+            $result = \DB::transaction(function() use ($claimId, $newStatus, $cancelReason, $user) {
                 // Khóa yêu cầu và bài viết liên quan
                 $claim = \App\Models\FoodClaim::lockForUpdate()->findOrFail($claimId);
                 $post = FoodPost::lockForUpdate()->findOrFail($claim->food_post_id);
@@ -243,6 +254,8 @@ class FoodPostController extends Controller
                 
                 if ($newStatus === 'approved') {
                     $claim->status = 'approved';
+                    $claim->approved_at = now();
+                    $claim->expires_at = now()->addMinutes(60); // Set timer đếm ngược 60 phút
                     $claim->save();
                     
                     \App\Models\SystemLog::create([
@@ -252,30 +265,60 @@ class FoodPostController extends Controller
                         'ip_address' => request()->ip(),
                         'created_at' => now()
                     ]);
+
+                    return [
+                        'success' => true,
+                        'message' => 'Cập nhật trạng thái yêu cầu thành công!',
+                        'broadcast' => null, // Không cần broadcast cho approved (người nhận đã có polling)
+                    ];
                 } else {
                     $claim->status = 'rejected';
+                    $claim->cancel_reason = $cancelReason;
                     $claim->save();
                     
                     // Hoàn lại kho thực phẩm
                     $post->remain_quantity += $claim->quantity;
-                    if ($post->status === 'expired' && $post->remain_quantity > 0 && new \DateTime($post->expires_at) > new \DateTime()) {
+                    // Luôn restore status về available nếu còn số lượng và chưa hết hạn
+                    if ($post->remain_quantity > 0 && new \DateTime($post->expires_at) > new \DateTime()) {
                         $post->status = 'available';
                     }
                     $post->save();
                     
                     \App\Models\SystemLog::create([
                         'action' => 'Từ chối yêu cầu nhận',
-                        'description' => "Người chia sẻ {$user->name} từ chối/hủy yêu cầu nhận của {$claim->user->name}, hoàn lại {$claim->quantity} {$post->unit}",
+                        'description' => "Người chia sẻ {$user->name} từ chối yêu cầu nhận của {$claim->user->name} (Lý do: {$claim->cancel_reason}), hoàn lại {$claim->quantity} {$post->unit}",
                         'user_id' => $user->id,
                         'ip_address' => request()->ip(),
                         'created_at' => now()
                     ]);
+
+                    // Trả về thông tin broadcast để thực hiện SAU KHI transaction commit
+                    return [
+                        'success' => true,
+                        'message' => 'Cập nhật trạng thái yêu cầu thành công!',
+                        'broadcast' => [
+                            'claim_id'       => $claim->id,
+                            'new_status'     => 'rejected',
+                            'recipient_id'   => $claim->user_id,
+                            'donor_id'       => $user->id,
+                            'cancel_reason'  => $claim->cancel_reason,
+                        ],
+                    ];
                 }
-                
-                return ['success' => true, 'message' => 'Cập nhật trạng thái yêu cầu thành công!'];
             });
             
             if ($result['success']) {
+                // Broadcast SAU KHI transaction đã commit thành công
+                if (!empty($result['broadcast'])) {
+                    $b = $result['broadcast'];
+                    broadcast(new \App\Events\ClaimStatusUpdated(
+                        $b['claim_id'],
+                        $b['new_status'],
+                        $b['recipient_id'],
+                        $b['donor_id'],
+                        $b['cancel_reason']
+                    ));
+                }
                 return redirect()->back()->with('success', $result['message']);
             } else {
                 return redirect()->back()->with('error', $result['message']);
@@ -290,10 +333,11 @@ class FoodPostController extends Controller
      */
     public function cancelClaim(Request $request, $claimId)
     {
+        $cancelReason = $request->input('cancel_reason', 'Người dùng tự hủy');
         $user = auth()->user();
         
         try {
-            $result = \DB::transaction(function() use ($claimId, $user) {
+            $result = \DB::transaction(function() use ($claimId, $user, $cancelReason) {
                 // Khóa yêu cầu và bài viết liên quan
                 $claim = \App\Models\FoodClaim::lockForUpdate()->findOrFail($claimId);
                 $post = FoodPost::lockForUpdate()->findOrFail($claim->food_post_id);
@@ -309,12 +353,20 @@ class FoodPostController extends Controller
                 }
                 
                 $claim->status = 'cancelled';
+                $claim->cancel_reason = $cancelReason;
+                
+                if (str_contains($cancelReason, 'Hệ thống tự động hủy')) {
+                    $claim->cancelled_by = 'system';
+                } else {
+                    $claim->cancelled_by = (string) $user->id;
+                }
+                
                 $claim->save();
                 
                 // Hoàn lại kho thực phẩm
                 $post->remain_quantity += $claim->quantity;
                 
-                // Nếu bài đăng đã hết hạn hoặc tạm dừng ẩn, nhưng còn số lượng và thời gian hết hạn vẫn ở tương lai, tự động khôi phục status
+                // Khôi phục status về available nếu còn số lượng và chưa hết hạn
                 if ($post->remain_quantity > 0 && new \DateTime($post->expires_at) > new \DateTime()) {
                     $post->status = 'available';
                 }
@@ -329,11 +381,34 @@ class FoodPostController extends Controller
                     'ip_address' => request()->ip(),
                     'created_at' => now()
                 ]);
-                
-                return ['success' => true, 'message' => 'Hủy giao dịch và hoàn lại kho thành công!'];
+
+                // Trả về thông tin để broadcast SAU KHI transaction commit
+                $notifyUserId = ($user->id === $post->user_id) ? $claim->user_id : $post->user_id;
+                return [
+                    'success' => true,
+                    'message' => 'Hủy giao dịch và hoàn lại kho thành công!',
+                    'broadcast' => [
+                        'claim_id'      => $claim->id,
+                        'new_status'    => 'cancelled',
+                        'recipient_id'  => $notifyUserId,
+                        'donor_id'      => $user->id,
+                        'cancel_reason' => $claim->cancel_reason,
+                    ],
+                ];
             });
             
             if ($result['success']) {
+                // Broadcast SAU KHI transaction đã commit thành công
+                if (!empty($result['broadcast'])) {
+                    $b = $result['broadcast'];
+                    broadcast(new \App\Events\ClaimStatusUpdated(
+                        $b['claim_id'],
+                        $b['new_status'],
+                        $b['recipient_id'],
+                        $b['donor_id'],
+                        $b['cancel_reason']
+                    ));
+                }
                 return redirect()->back()->with('success', $result['message']);
             } else {
                 return redirect()->back()->with('error', $result['message']);

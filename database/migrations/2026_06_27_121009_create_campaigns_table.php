@@ -13,6 +13,12 @@ return new class extends Migration
     {
         Schema::create('campaigns', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->string('title');
+            $table->text('description')->nullable();
+            $table->dateTime('end_date')->nullable();
+            $table->string('location_details')->nullable();
+            $table->string('status')->default('pending');
             $table->timestamps();
         });
     }

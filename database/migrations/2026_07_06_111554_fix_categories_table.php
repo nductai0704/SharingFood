@@ -1,0 +1,36 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    /**
+     * Run the migrations.
+     */
+    public function up(): void
+    {
+        Schema::table('categories', function (Blueprint $table) {
+            if (!Schema::hasColumn('categories', 'name')) {
+                $table->string('name')->default('Danh mục mới');
+            }
+            if (!Schema::hasColumn('categories', 'icon')) {
+                $table->string('icon')->nullable();
+            }
+            if (!Schema::hasColumn('categories', 'is_allowed')) {
+                $table->boolean('is_allowed')->default(1);
+            }
+        });
+    }
+
+    /**
+     * Reverse the migrations.
+     */
+    public function down(): void
+    {
+        Schema::table('categories', function (Blueprint $table) {
+            $table->dropColumn(['name', 'icon', 'is_allowed']);
+        });
+    }
+};

@@ -39,6 +39,10 @@ class HandleInertiaRequests extends Middleware
                     ->with(['user', 'foodPost'])
                     ->latest()
                     ->get() : [],
+                'myClaims' => $request->user() ? \App\Models\FoodClaim::where('user_id', $request->user()->id)
+                    ->with(['foodPost.user'])
+                    ->latest()
+                    ->get() : [],
             ],
         ];
     }

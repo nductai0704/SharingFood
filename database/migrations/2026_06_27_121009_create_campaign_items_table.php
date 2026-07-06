@@ -13,6 +13,10 @@ return new class extends Migration
     {
         Schema::create('campaign_items', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('campaign_id')->constrained()->onDelete('cascade');
+            $table->string('item_name');
+            $table->integer('target_quantity');
+            $table->integer('current_quantity')->default(0);
             $table->timestamps();
         });
     }
