@@ -11,11 +11,14 @@ const dismissedNotifications = ref(JSON.parse(localStorage.getItem('sf_dismissed
 const lastOpenedNotificationTime = ref(localStorage.getItem('sf_last_opened_notifications') || '0');
 
 const unreadNotificationsCount = computed(() => {
-    return allNotifications.value.filter(item => {
-        const itemTime = new Date(item.created_at || item.claim.created_at).getTime();
+    let count = page.props.auth.unreadNotificationsCount || 0;
+    const claimCount = allNotifications.value.filter(item => {
+        if (item.is_db_notification) return false;
+        const itemTime = new Date(item.created_at || item.claim?.created_at).getTime();
         const lastOpenedTime = new Date(lastOpenedNotificationTime.value).getTime();
         return itemTime > lastOpenedTime;
     }).length;
+    return count + claimCount;
 });
 
 const toggleNotification = () => {
@@ -111,6 +114,22 @@ const allNotifications = computed(() => {
                     created_at: claim.updated_at || claim.created_at
                 });
             }
+        });
+    }
+
+    // 3. Database Notifications (ví dụ: NewDonationNotification)
+    if (page.props.auth.notifications) {
+        page.props.auth.notifications.forEach(n => {
+            if (n.read_at) return; // Hide read notifications, or keep them if you want. Let's keep unread only.
+            list.push({
+                id: n.id,
+                type: n.data.type,
+                title: 'Có lượt quyên góp mới',
+                message: n.data.message,
+                url: n.data.url,
+                created_at: n.created_at,
+                is_db_notification: true
+            });
         });
     }
 
@@ -234,10 +253,21 @@ const handleUpdateClaimStatus = (claimId, status) => {
         }
     });
 };
+
+const handleDbNotificationClick = (notification) => {
+    router.post(route('notifications.read', notification.id), {}, {
+        onSuccess: () => {
+            if (notification.url) {
+                router.visit(notification.url);
+            }
+        }
+    });
+};
 </script>
 
 <template>
   <div class="min-h-screen bg-gray-50 text-gray-800 font-sans">
+    
     <!-- Custom Premium Navbar -->
     <nav class="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -321,6 +351,7 @@ const handleUpdateClaimStatus = (claimId, status) => {
                             <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'incoming_cancelled' || item.type === 'outgoing_cancelled'">Đã huỷ</span>
                             <span class="font-bold text-[10px] uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" v-else-if="item.type === 'outgoing_approved'">Đã duyệt</span>
                             <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'outgoing_rejected'">Từ chối</span>
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100" v-else-if="item.type === 'new_donation'">Quyên góp mới</span>
                           </div>
 
                           <p class="text-gray-800 text-xs">{{ item.message }}</p>
@@ -352,6 +383,15 @@ const handleUpdateClaimStatus = (claimId, status) => {
                             class="flex-1 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 font-semibold text-[10px] py-1 rounded-lg border border-gray-200 hover:border-red-100 transition text-center cursor-pointer"
                           >
                             Từ chối
+                          </button>
+                        </template>
+                        <!-- Database Notifications -->
+                        <template v-else-if="item.is_db_notification">
+                          <button 
+                            @click.stop="handleDbNotificationClick(item)" 
+                            class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition text-center cursor-pointer shadow-sm"
+                          >
+                            Xem chi tiết
                           </button>
                         </template>
                         <!-- Các thông báo khác chỉ cần nút Đóng (Dismiss) -->
@@ -410,6 +450,7 @@ const handleUpdateClaimStatus = (claimId, status) => {
                           <span class="font-bold text-[8px] uppercase tracking-wider text-red-700 bg-red-50 px-1 py-0.5 rounded" v-else-if="item.type === 'incoming_cancelled' || item.type === 'outgoing_cancelled'">Đã huỷ</span>
                           <span class="font-bold text-[8px] uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded" v-else-if="item.type === 'outgoing_approved'">Đã duyệt</span>
                           <span class="font-bold text-[8px] uppercase tracking-wider text-red-700 bg-red-50 px-1 py-0.5 rounded" v-else-if="item.type === 'outgoing_rejected'">Từ chối</span>
+                          <span class="font-bold text-[8px] uppercase tracking-wider text-purple-700 bg-purple-50 px-1 py-0.5 rounded" v-else-if="item.type === 'new_donation'">Quyên góp mới</span>
                         </div>
                         <p class="text-gray-800 text-[11px]">{{ item.message }}</p>
                       </div>
@@ -418,6 +459,10 @@ const handleUpdateClaimStatus = (claimId, status) => {
                         <template v-if="item.type === 'incoming_pending'">
                           <button @click.stop="handleUpdateClaimStatus(item.id, 'approved')" class="flex-1 bg-emerald-600 text-white font-bold text-[10px] py-1 rounded-lg">Duyệt</button>
                           <button @click.stop="openGiverCancelModal(item.id, 'rejected')" class="flex-1 bg-red-50 text-red-600 font-bold text-[10px] py-1 rounded-lg border border-red-100">Từ chối</button>
+                        </template>
+                        <!-- Database Notifications -->
+                        <template v-else-if="item.is_db_notification">
+                          <button @click.stop="handleDbNotificationClick(item)" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] py-1 rounded-lg">Xem chi tiết</button>
                         </template>
                         <!-- Các thông báo khác chỉ cần nút Đóng (Dismiss) -->
                         <template v-else>

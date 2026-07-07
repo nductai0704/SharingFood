@@ -467,6 +467,29 @@ class FoodPostController extends Controller
     }
 
     /**
+     * Cập nhật thông tin tài xế cho đơn nhận thực phẩm
+     */
+    public function updateShipper(Request $request, $claimId)
+    {
+        $request->validate([
+            'shipper_name' => 'required|string|max:255',
+            'shipper_license_plate' => 'required|string|max:255',
+        ]);
+
+        $claim = \App\Models\FoodClaim::findOrFail($claimId);
+
+        if ($claim->user_id !== auth()->id()) {
+            abort(403, 'Unauthorized');
+        }
+
+        $claim->delivery_service_company = $request->shipper_name;
+        $claim->driver_license_plate = $request->shipper_license_plate;
+        $claim->save();
+
+        return back()->with('success', 'Cập nhật thông tin tài xế thành công');
+    }
+
+    /**
      * Gỡ bài đăng tặng thực phẩm (Xóa mềm - Chuyển sang trạng thái 'deleted' và hủy các yêu cầu liên quan)
      */
     public function destroy(FoodPost $post)

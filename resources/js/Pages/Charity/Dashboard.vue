@@ -1,13 +1,15 @@
 <script setup>
 import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
-import { Head, Link, usePage, router } from '@inertiajs/vue3';
+import { Head, Link, usePage, router, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
     dbMyClaims: Array,
-    dbMyCampaigns: Array
+    dbMyCampaigns: Array,
+    dbPendingDonations: Array
 });
 
 const isMobileMenuOpen = ref(false);
+
 const page = usePage();
 const activeTab = ref('food'); // Tab active: 'food' hoặc 'campaign'
 
@@ -632,6 +634,31 @@ const handleGetDirections = (claim) => {
     window.open(url, '_blank');
 };
 
+const showShipperModal = ref(false);
+const shipperForm = useForm({
+    shipper_name: '',
+    shipper_license_plate: ''
+});
+const selectedClaimForShipper = ref(null);
+
+const openClaimShipperModal = (claim) => {
+    selectedClaimForShipper.value = claim;
+    shipperForm.shipper_name = claim.delivery_service_company || '';
+    shipperForm.shipper_license_plate = claim.driver_license_plate || '';
+    showShipperModal.value = true;
+};
+
+const submitShipperForm = () => {
+    if (selectedClaimForShipper.value) {
+        shipperForm.patch(route('food-claims.update_shipper', selectedClaimForShipper.value.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                showShipperModal.value = false;
+            }
+        });
+    }
+};
+
 const handleCompleteClaim = (claimId) => {
     if (confirm('Bạn có chắc chắn muốn xác nhận đã giao xong thực phẩm này cho người nhận?')) {
         router.post(route('food-claims.complete', claimId), {}, {
@@ -1207,6 +1234,17 @@ const submitClaim = () => {
                   </div>
 
                   <div class="mt-2 pt-2 border-t border-gray-100/50 text-[11px] space-y-1 text-left">
+                    <div v-if="claim.shipping_method === 'delivery_service'" class="bg-orange-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1 relative mb-2 border border-orange-100/50">
+                        <p>🚚 <b>Dịch vụ giao hàng:</b></p>
+                        <p>Tên tài xế: <span class="font-bold">{{ claim.delivery_service_company || 'Chưa cập nhật' }}</span></p>
+                        <p>Biển số xe: <span class="font-bold">{{ claim.driver_license_plate || 'Chưa cập nhật' }}</span></p>
+                        <div class="pt-1.5 border-t border-orange-100/50 mt-1.5">
+                            <button @click="openClaimShipperModal(claim)" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition text-center cursor-pointer shadow-sm">
+                                Cập nhật thông tin Shipper
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Trạng thái Chờ duyệt -->
                     <div v-if="claim.status === 'pending'" class="text-amber-600 bg-amber-50/50 p-1.5 rounded-lg border border-amber-100/50 flex items-start gap-1">
                       <span class="shrink-0 mt-0.5">⚠️</span>
@@ -1420,9 +1458,8 @@ const submitClaim = () => {
               <input type="text" v-model="claimForm.pickup_contact_phone" placeholder="SĐT liên hệ" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
           </div>
 
-          <div v-if="claimForm.shipping_method === 'delivery_service'" class="grid grid-cols-2 gap-3 mt-2">
-              <input type="text" v-model="claimForm.delivery_service_company" placeholder="Hãng xe (VD: Grab)" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
-              <input type="text" v-model="claimForm.driver_license_plate" placeholder="Biển số xe" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
+          <div v-if="claimForm.shipping_method === 'delivery_service'" class="mt-2 text-[11px] text-gray-500 italic px-1">
+              Bạn có thể cập nhật thông tin tài xế và biển số xe sau khi yêu cầu được duyệt.
           </div>
         </div>
 
@@ -1506,6 +1543,39 @@ const submitClaim = () => {
                 </button>
             </div>
         </div>
+    </div>
+  </div>
+  <!-- MODAL CẬP NHẬT SHIPPER (CHO CLAIMS) -->
+  <div v-if="showShipperModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-[60] animate-fade-in">
+    <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative text-left">
+      <div class="p-6">
+        <div class="flex justify-between items-start mb-4">
+          <h3 class="text-lg font-extrabold text-gray-900">Cập nhật Shipper</h3>
+          <button @click="showShipperModal = false" class="text-gray-400 hover:text-gray-600 transition p-1">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+          </button>
+        </div>
+        <p class="text-xs text-gray-500 mb-5">Vui lòng điền thông tin tài xế để đối soát khi nhận hàng.</p>
+        
+        <form @submit.prevent="submitShipperForm" class="space-y-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Tên tài xế <span class="text-red-500">*</span></label>
+            <input v-model="shipperForm.shipper_name" type="text" class="w-full rounded-xl border-gray-200 focus:border-orange-600 focus:ring-orange-600 text-sm" placeholder="Nhập tên tài xế Grab, XanhSM..." required>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Biển số xe <span class="text-red-500">*</span></label>
+            <input v-model="shipperForm.shipper_license_plate" type="text" class="w-full rounded-xl border-gray-200 focus:border-orange-600 focus:ring-orange-600 text-sm" placeholder="Ví dụ: 59A-123.45" required>
+          </div>
+          <div class="flex justify-end gap-3 mt-6">
+              <button type="button" @click="showShipperModal = false" class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">
+                  Hủy
+              </button>
+              <button type="submit" :disabled="shipperForm.processing" class="px-5 py-2 text-sm font-bold text-white bg-orange-600 rounded-xl hover:bg-orange-700 disabled:opacity-50">
+                  Cập nhật
+              </button>
+          </div>
+        </form>
+      </div>
     </div>
   </div>
 </template>

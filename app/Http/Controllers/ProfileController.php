@@ -39,12 +39,19 @@ class ProfileController extends Controller
             ->latest()
             ->get();
 
+        $completedDonations = \App\Models\CampaignDonation::where('user_id', $user->id)
+            ->where('status', 'completed')
+            ->with(['campaign', 'campaignItem'])
+            ->latest()
+            ->get();
+
         return Inertia::render('Profile/Edit', [
             'mustVerifyEmail' => $user instanceof MustVerifyEmail,
             'status' => session('status'),
             'charityDocuments' => $charityDocuments,
             'receivingClaims' => $receivingClaims,
             'givingClaims' => $givingClaims,
+            'completedDonations' => $completedDonations,
         ]);
     }
 

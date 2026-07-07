@@ -21,24 +21,39 @@ Route::get('/', function () {
 
 Route::get('/home', function () {
     $dbMyClaims = [];
+    $dbMyDonations = [];
     if (auth()->check()) {
         $dbMyClaims = \App\Models\FoodClaim::where('user_id', auth()->id())
             ->with(['foodPost.user'])
             ->latest()
             ->get();
+        
+        $dbMyDonations = \App\Models\CampaignDonation::where('user_id', auth()->id())
+            ->with(['campaign.user', 'campaignItem'])
+            ->where('status', 'pending') // Only show pending donations
+            ->latest()
+            ->get();
     }
     
     // Load các chiến dịch đã được duyệt để hiển thị ngoài trang chủ
-    $dbActiveCampaigns = \App\Models\Campaign::with(['user', 'items'])
+    $dbActiveCampaigns = \App\Models\Campaign::with(['user', 'items' => function ($query) {
+        $query->withSum(['donations as pending_quantity' => function ($q) {
+            $q->where('status', 'pending');
+        }], 'donation_quantity');
+    }])
         ->where('status', 'active')
         ->latest()
         ->get();
 
     return Inertia::render('Home', [
         'dbMyClaims' => $dbMyClaims,
+        'dbMyDonations' => $dbMyDonations,
         'dbActiveCampaigns' => $dbActiveCampaigns
     ]);
 })->middleware(['auth', 'verified'])->name('home');
+
+// Cập nhật thông tin shipper cho đơn khuyên góp
+Route::patch('/donations/{donation_code}/shipper', [\App\Http\Controllers\CampaignDonationController::class, 'updateShipper'])->middleware(['auth', 'verified'])->name('donations.update_shipper');
 
 // API Frontend: Tìm đồ ăn xung quanh
 Route::get('/api/nearby-food', [FoodPostController::class, 'getNearbyFood']);
@@ -77,6 +92,7 @@ Route::post('/food-posts/{post}/claim', [FoodPostController::class, 'claim'])->m
 Route::post('/food-claims/{claim}/status', [FoodPostController::class, 'updateClaimStatus'])->middleware('auth')->name('food-claims.status');
 Route::post('/food-claims/{claim}/cancel', [FoodPostController::class, 'cancelClaim'])->middleware('auth')->name('food-claims.cancel');
 Route::post('/food-claims/{claim}/complete', [FoodPostController::class, 'completeClaim'])->middleware('auth')->name('food-claims.complete');
+Route::patch('/food-claims/{claim}/shipper', [FoodPostController::class, 'updateShipper'])->middleware('auth')->name('food-claims.update_shipper');
 
 
 
@@ -136,8 +152,18 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
             ->with('items')
             ->latest()
             ->get();
+            
+        $dbPendingDonations = \App\Models\CampaignDonation::with(['user', 'campaign', 'campaignItem'])
+            ->whereHas('campaign', function ($query) {
+                $query->where('user_id', auth()->id());
+            })
+            ->where('status', 'pending')
+            ->latest()
+            ->get();
+            
         return Inertia::render('Charity/Campaigns', [
-            'dbCampaigns' => $campaigns
+            'dbCampaigns' => $campaigns,
+            'dbPendingDonations' => $dbPendingDonations
         ]);
     })->name('charity.campaigns');
 
@@ -153,12 +179,30 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
     // Trang khởi tạo và lưu chiến dịch quyên góp
     Route::get('/charity/campaigns/create', [\App\Http\Controllers\CampaignController::class, 'create'])->name('charity.campaigns.create');
     Route::post('/charity/campaigns', [\App\Http\Controllers\CampaignController::class, 'store'])->name('charity.campaigns.store');
+    
+    // Cập nhật chiến dịch
+    Route::get('/charity/campaigns/{campaign}/edit', [\App\Http\Controllers\CampaignController::class, 'edit'])->name('charity.campaigns.edit');
+    Route::post('/charity/campaigns/{campaign}/update', [\App\Http\Controllers\CampaignController::class, 'update'])->name('charity.campaigns.update');
+    
+    // Chốt chiến dịch và xuất báo cáo
+    Route::post('/charity/campaigns/{campaign}/close', [\App\Http\Controllers\CampaignController::class, 'closeCampaign'])->name('charity.campaigns.close');
+    Route::get('/charity/campaigns/{campaign}/export', [\App\Http\Controllers\CampaignController::class, 'exportReport'])->name('charity.campaigns.export');
+    
+    // Xac nhan don quyen gop
+    Route::post('/charity/donations/{donationCode}/verify', [\App\Http\Controllers\CampaignDonationController::class, 'verify'])->name('charity.donations.verify');
 });
 
 Route::middleware('auth')->group(function () {
+    // Gui don quyen gop vao campaign
+    Route::post('/campaigns/{campaign}/donate', [\App\Http\Controllers\CampaignDonationController::class, 'store'])->name('campaign-donations.store');
+
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
-    Route::delete('/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');
+    Route::post('/notifications/{id}/read', function ($id) {
+        $notification = auth()->user()->notifications()->findOrFail($id);
+        $notification->markAsRead();
+        return back();
+    })->name('notifications.read');
 });
 
 require __DIR__.'/auth.php';

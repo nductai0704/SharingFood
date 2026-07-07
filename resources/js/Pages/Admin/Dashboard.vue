@@ -1,10 +1,13 @@
 <script setup>
 import { ref, computed } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
+import AdminCharts from './Partials/AdminCharts.vue';
 
 // Nhận dữ liệu truyền từ Laravel Controller sang thông qua Props
 const props = defineProps({
     stats: Object,              // Chứa các số liệu tổng hợp thống kê
+    chartData: Object,          // Dữ liệu cho các biểu đồ
+    recentActivities: Array,    // Danh sách 5 hoạt động gần nhất
     users: Array,              // Danh sách toàn bộ người dùng và tài liệu minh chứng
     activeCampaigns: Array,    // Danh sách chiến dịch từ thiện đã duyệt 'active'
     pendingCampaigns: Array,   // Danh sách chiến dịch từ thiện chờ duyệt 'pending'
@@ -234,49 +237,121 @@ const getStatusLabel = (status) => {
             </div>
 
             <div v-if="activeTab === 'overview'" class="space-y-6 animate-fade-in">
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
                     <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Tài khoản mới tháng này</span>
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Tổng người dùng</span>
                         <div class="flex items-baseline mt-4 space-x-2">
-                            <span class="text-3xl font-bold text-gray-950">{{ stats?.new_users_count ?? 24 }}</span>
-                            <span class="text-xs text-emerald-600 font-semibold">↑ Mới</span>
+                            <span class="text-3xl font-bold text-gray-950">{{ stats?.total_users ?? 0 }}</span>
+                            <span class="text-xs text-emerald-600 font-semibold">Tài khoản</span>
                         </div>
                     </div>
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Giải cứu trong ngày</span>
-                        <div class="flex items-baseline mt-4 space-x-2">
-                            <span class="text-3xl font-bold text-emerald-600">{{ stats?.posts_today ?? 42 }}</span>
-                            <span class="text-xs text-gray-500">Bài đăng lẻ</span>
+                    
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between relative group">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Thực phẩm lẻ</span>
+                        <div class="flex flex-col mt-4">
+                            <div class="flex items-baseline space-x-2">
+                                <span class="text-3xl font-bold text-emerald-600">{{ stats?.claims_breakdown?.total ?? 0 }}</span>
+                                <span class="text-xs text-emerald-600 font-semibold">yêu cầu</span>
+                            </div>
+                            <div class="mt-3 grid grid-cols-3 gap-1 text-[10px] font-medium text-gray-500">
+                                <div class="flex flex-col items-center p-1 bg-gray-50 rounded">
+                                    <span class="text-emerald-600 font-bold">{{ stats?.claims_breakdown?.completed_count ?? 0 }}</span>
+                                    <span>Đã lấy</span>
+                                </div>
+                                <div class="flex flex-col items-center p-1 bg-gray-50 rounded">
+                                    <span class="text-amber-500 font-bold">{{ stats?.claims_breakdown?.pending_count ?? 0 }}</span>
+                                    <span>Chờ lấy</span>
+                                </div>
+                                <div class="flex flex-col items-center p-1 bg-gray-50 rounded">
+                                    <span class="text-red-500 font-bold">{{ stats?.claims_breakdown?.cancelled_count ?? 0 }}</span>
+                                    <span>Đã hủy</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
                     <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Tỷ lệ giao dịch thành công</span>
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Chiến dịch quyên góp</span>
+                        <div class="flex flex-col mt-4">
+                            <div class="flex items-baseline space-x-2">
+                                <span class="text-3xl font-bold text-amber-600">{{ stats?.donations_breakdown?.total_donations ?? 0 }}</span>
+                                <span class="text-xs text-amber-600 font-semibold">lượt góp</span>
+                            </div>
+                            <div class="mt-3 grid grid-cols-2 gap-2 text-[10px] font-medium text-gray-500">
+                                <div class="flex flex-col p-1.5 bg-gray-50 rounded">
+                                    <span class="text-emerald-600 font-bold">{{ stats?.donations_breakdown?.completed_quantity ?? 0 }} đv</span>
+                                    <span>Đã nhận thực tế</span>
+                                </div>
+                                <div class="flex flex-col p-1.5 bg-gray-50 rounded">
+                                    <span class="text-amber-500 font-bold">{{ stats?.donations_breakdown?.pending_quantity ?? 0 }} đv</span>
+                                    <span>Đang vận chuyển</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Sản lượng giải cứu</span>
                         <div class="flex items-baseline mt-4 space-x-2">
-                            <span class="text-3xl font-bold text-blue-600">{{ stats?.success_rate ?? '87.5%' }}</span>
+                            <span class="text-3xl font-bold text-purple-600">{{ stats?.rescued_volume ?? 0 }}</span>
+                            <span class="text-xs text-purple-600 font-medium">Đơn vị</span>
+                        </div>
+                        <p class="text-[10px] text-gray-400 mt-2">Tổng tích lũy thực tế</p>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
+                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Tỷ lệ thành công</span>
+                        <div class="flex items-baseline mt-4 space-x-2">
+                            <span class="text-3xl font-bold text-blue-600">{{ stats?.success_rate ?? '0%' }}</span>
                             <span class="text-xs text-blue-500 font-medium">Hoàn thành</span>
                         </div>
-                    </div>
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Chiến dịch quyên góp chạy</span>
-                        <div class="flex items-baseline mt-4 space-x-2">
-                            <span class="text-3xl font-bold text-amber-600">{{ stats?.active_campaigns ?? 5 }}</span>
-                            <span class="text-xs text-amber-600 font-medium">Tổ chức quản lý</span>
-                        </div>
+                        <p class="text-[10px] text-gray-400 mt-2">Dựa trên đơn lẻ</p>
                     </div>
                 </div>
 
-                <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
-                    <h3 class="text-base font-bold text-gray-950">🎯 Theo dõi tiến độ gom hiện vật thực tế</h3>
-                    <div class="space-y-4">
-                        <div class="space-y-2">
-                            <div class="flex justify-between text-xs font-semibold">
-                                <span class="text-gray-700">Gom 500kg Gạo tẻ - Mái Ấm Tình Thương</span>
-                                <span class="text-emerald-600">70% (350kg / 500kg)</span>
-                            </div>
-                            <div class="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
-                                <div class="bg-emerald-500 h-full rounded-full" style="width: 70%"></div>
-                            </div>
-                        </div>
+                <!-- Biểu đồ -->
+                <AdminCharts :chart-data="chartData" />
+
+                <!-- Bảng Nhật ký hoạt động gần đây -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
+                    <div class="p-6 border-b border-gray-100">
+                        <h3 class="text-base font-bold text-gray-950">📋 Nhật ký hoạt động gần đây</h3>
+                        <p class="text-xs text-gray-500 mt-1">Danh sách các thao tác và sự kiện mới nhất trên hệ thống.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
+                                <tr>
+                                    <th class="px-6 py-4">Thời gian</th>
+                                    <th class="px-6 py-4">Loại hoạt động</th>
+                                    <th class="px-6 py-4">Chi tiết hoạt động</th>
+                                    <th class="px-6 py-4">Thực hiện bởi</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-50">
+                                <tr v-for="log in recentActivities" :key="log.id" class="hover:bg-gray-50/50 transition">
+                                    <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
+                                        {{ log.time }}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <span class="bg-gray-100 text-gray-700 px-2 py-1 rounded text-[10px] font-bold tracking-wider">
+                                            {{ log.type }}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 text-xs text-gray-700">
+                                        {{ log.details }}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-xs font-medium text-gray-900">
+                                        {{ log.status }}
+                                    </td>
+                                </tr>
+                                <tr v-if="!recentActivities || recentActivities.length === 0">
+                                    <td colspan="4" class="px-6 py-8 text-center text-gray-400 text-xs">
+                                        Chưa có hoạt động nào gần đây.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             </div>
@@ -527,8 +602,12 @@ const getStatusLabel = (status) => {
                                 <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.created_at).toLocaleDateString('vi-VN') }}</span>
                             </div>
                             <div>
-                                <span class="text-gray-500 font-semibold text-xs block mb-1">🏁 Ngày kết thúc</span>
+                                <span class="text-gray-500 font-semibold text-xs block mb-1">🏁 Ngày đóng cổng</span>
                                 <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.end_date).toLocaleDateString('vi-VN') }}</span>
+                            </div>
+                            <div v-if="selectedCampaign.execution_date">
+                                <span class="text-gray-500 font-semibold text-xs block mb-1">🚀 Ngày đi phát</span>
+                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.execution_date).toLocaleDateString('vi-VN') }}</span>
                             </div>
                             <div class="col-span-2">
                                 <span class="text-gray-500 font-semibold text-xs block mb-1">📍 Địa điểm nhận quyên góp</span>
@@ -542,7 +621,7 @@ const getStatusLabel = (status) => {
                                 <li v-for="item in selectedCampaign.items" :key="item.id" class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
                                     <span class="text-sm font-semibold text-gray-800">{{ item.item_name }}</span>
                                     <span class="text-xs font-bold bg-white border border-gray-200 px-2.5 py-1 rounded-md text-emerald-600">
-                                        Mục tiêu: {{ item.target_quantity }} {{ item.unit }}
+                                        Thực nhận: {{ item.current_quantity }} / {{ item.target_quantity }} {{ item.unit }}
                                     </span>
                                 </li>
                             </ul>

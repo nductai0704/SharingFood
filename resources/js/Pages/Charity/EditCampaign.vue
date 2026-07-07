@@ -3,15 +3,24 @@ import { ref, onMounted } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 
+const props = defineProps({
+    campaign: Object
+});
+
 const form = useForm({
-    title: '',
-    description: '',
-    location_details: '',
-    latitude: null,
-    longitude: null,
-    end_date: '',
-    execution_date: '',
-    items: [
+    title: props.campaign.title,
+    description: props.campaign.description || '',
+    location_details: props.campaign.location_details,
+    latitude: props.campaign.latitude,
+    longitude: props.campaign.longitude,
+    end_date: props.campaign.end_date ? props.campaign.end_date.substring(0, 10) : '', // Format for input type="date"
+    execution_date: props.campaign.execution_date ? props.campaign.execution_date.substring(0, 10) : '',
+    items: props.campaign.items.length > 0 ? props.campaign.items.map(i => ({
+        id: i.id, // Keep track of existing items
+        item_name: i.item_name,
+        target_quantity: i.target_quantity,
+        unit: i.unit || ''
+    })) : [
         { item_name: '', target_quantity: 1, unit: '' }
     ],
 });
@@ -42,10 +51,10 @@ onMounted(async () => {
     const L = await loadLeaflet();
     
     // Khởi tạo bản đồ tại tâm Việt Nam nếu chưa có tọa độ
-    const initialLat = 16.047079;
-    const initialLng = 108.206230;
+    const initialLat = props.campaign.latitude || 16.047079;
+    const initialLng = props.campaign.longitude || 108.206230;
     
-    mapInstance.value = L.map('campaign-map').setView([initialLat, initialLng], 6);
+    mapInstance.value = L.map('campaign-map').setView([initialLat, initialLng], 15);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         maxZoom: 19,
@@ -62,6 +71,18 @@ onMounted(async () => {
         shadowSize: [41, 41]
     });
     L.Marker.prototype.options.icon = DefaultIcon;
+
+    if (props.campaign.latitude && props.campaign.longitude) {
+        markerInstance.value = L.marker([props.campaign.latitude, props.campaign.longitude], { draggable: true }).addTo(mapInstance.value);
+        markerInstance.value.bindPopup("<b>Vị trí tập kết quyên góp</b>").openPopup();
+        
+        markerInstance.value.on('dragend', async () => {
+            const position = markerInstance.value.getLatLng();
+            form.latitude = position.lat;
+            form.longitude = position.lng;
+            await reverseGeocode(position.lat, position.lng);
+        });
+    }
 
     // Lắng nghe sự kiện click trên bản đồ để ghim tọa độ
     mapInstance.value.on('click', async function(e) {
@@ -171,7 +192,7 @@ const submit = () => {
         alert('Vui lòng ghim một vị trí tập kết trên bản đồ.');
         return;
     }
-    form.post(route('charity.campaigns.store'), {
+    form.post(route('charity.campaigns.update', props.campaign.id), {
         preserveScroll: true,
         onSuccess: () => {
             // Xử lý sau khi thành công nếu cần
@@ -182,7 +203,7 @@ const submit = () => {
 
 <template>
   <AuthenticatedLayout>
-    <Head title="Khởi tạo chiến dịch quyên góp" />
+    <Head title="Cập nhật chiến dịch quyên góp" />
 
     <div class="min-h-screen bg-gray-50 py-10">
         <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -193,9 +214,9 @@ const submit = () => {
                     <span>&larr;</span> Quay lại danh sách
 
                 </Link>
-                <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Khởi tạo Chiến dịch Quyên góp lớn</h1>
+                <h1 class="text-3xl font-extrabold text-gray-900 tracking-tight">Cập nhật Chiến dịch Quyên góp</h1>
                 <p class="mt-2 text-sm text-gray-500">
-                    Chiến dịch sẽ cần được quản trị viên phê duyệt trước khi hiển thị công khai tới cộng đồng.
+                    Sửa thông tin hoặc bổ sung thêm vật phẩm cần gọi.
                 </p>
             </div>
 
@@ -323,7 +344,7 @@ const submit = () => {
                     <Link :href="route('charity.campaigns')" class="text-gray-600 hover:text-gray-900 font-medium text-sm px-4 py-2 transition">Hủy bỏ</Link>
                     <button type="submit" :disabled="form.processing" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition disabled:opacity-50">
                         <span v-if="form.processing">Đang xử lý...</span>
-                        <span v-else>Gửi phê duyệt chiến dịch</span>
+                        <span v-else>Cập nhật chiến dịch</span>
                     </button>
                 </div>
             </form>

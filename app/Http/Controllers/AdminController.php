@@ -14,18 +14,91 @@ class AdminController extends Controller
      */
     public function index()
     {
-        // Thống kê giả lập tạm thời (sau này sẽ query từ bảng food_posts, campaigns, v.v.)
+        $totalUsers = User::count();
+        $totalFoodPosts = \App\Models\FoodPost::count();
+        
+        $claimsStats = \App\Models\FoodClaim::selectRaw('
+            count(*) as total,
+            sum(case when status = "completed" then 1 else 0 end) as completed_count,
+            sum(case when status = "pending" then 1 else 0 end) as pending_count,
+            sum(case when status = "cancelled" then 1 else 0 end) as cancelled_count
+        ')->first();
+
+        // 2. BÓC TÁCH CHIẾN DỊCH QUYÊN GÓP (TÍNH THEO SỐ LƯỢNG)
+        $donationsStats = \App\Models\CampaignDonation::selectRaw('
+            count(*) as total_donations,
+            sum(case when status = "completed" then donation_quantity else 0 end) as completed_quantity,
+            sum(case when status = "pending" then donation_quantity else 0 end) as pending_quantity
+        ')->first();
+
+        $totalCampaigns = Campaign::count();
+        $rescuedFoodVolume = \App\Models\FoodClaim::where('status', 'completed')->sum('quantity') 
+                           + ($donationsStats->completed_quantity ?? 0);
+
         $stats = [
-            'new_users_count' => User::whereMonth('created_at', now()->month)->count(),
-            'posts_today' => 42,
-            'success_rate' => '87.5%',
-            'active_campaigns' => Campaign::where('status', 'active')->count(),
+            'total_users' => $totalUsers,
+            'total_food_posts' => $totalFoodPosts,
+            'total_campaigns' => $totalCampaigns,
+            'claims_breakdown' => $claimsStats,
+            'donations_breakdown' => $donationsStats,
+            'rescued_volume' => $rescuedFoodVolume,
+            'success_rate' => ($claimsStats->total ?? 0) > 0 ? round((($claimsStats->completed_count ?? 0) / $claimsStats->total) * 100, 1) . '%' : '0%',
         ];
 
-        // Lấy danh sách users và load kèm tài liệu (documents)
+        // Chart Data: 7 ngày qua
+        $last7Days = collect(range(6, 0))->map(function ($daysAgo) {
+            return now()->subDays($daysAgo)->format('Y-m-d');
+        });
+
+        $foodPostsChart = [];
+        $campaignsChart = [];
+        $usersChart = [];
+        foreach ($last7Days as $date) {
+            $foodPostsChart[] = \App\Models\FoodPost::whereDate('created_at', $date)->count();
+            $campaignsChart[] = Campaign::whereDate('created_at', $date)->count();
+            $usersChart[] = User::whereDate('created_at', $date)->count();
+        }
+
+        $shippingMethods = \App\Models\FoodClaim::selectRaw('shipping_method, count(*) as total')
+            ->whereNotNull('shipping_method')
+            ->groupBy('shipping_method')
+            ->pluck('total', 'shipping_method')
+            ->toArray();
+
+        $chartData = [
+            'labels' => $last7Days->map(fn($d) => \Carbon\Carbon::parse($d)->format('d/m'))->toArray(),
+            'food_posts' => $foodPostsChart,
+            'campaigns' => $campaignsChart,
+            'users' => $usersChart,
+            'transport_methods' => [
+                'labels' => ['Tự đến lấy', 'Nhờ người thân', 'Gọi xe công nghệ'],
+                'data' => [
+                    $shippingMethods['self_pickup'] ?? 0,
+                    $shippingMethods['relative_pickup'] ?? 0,
+                    $shippingMethods['delivery_service'] ?? 0,
+                ]
+            ]
+        ];
+
         $users = User::with('documents')->orderBy('created_at', 'desc')->get();
 
-        // Lấy danh sách nhật ký hệ thống kèm thông tin user thực hiện
+        // 5. NHẬT KÝ HOẠT ĐỘNG GẦN ĐÂY (5 hành động mới nhất)
+        $recentActivities = \App\Models\SystemLog::with('user')
+            ->orderBy('created_at', 'desc')
+            ->take(5)
+            ->get()
+            ->map(function($log) {
+                return [
+                    'id' => $log->id,
+                    'time' => $log->created_at->diffForHumans(),
+                    'type' => $log->action,
+                    'details' => $log->description,
+                    'status' => $log->user ? $log->user->name : 'Hệ thống',
+                    'created_at' => $log->created_at
+                ];
+            });
+
+        // Lấy danh sách nhật ký hệ thống kèm thông tin user thực hiện (cho Tab Logs)
         $systemLogs = \App\Models\SystemLog::with('user')->orderBy('created_at', 'desc')->take(100)->get();
 
         // Danh sách chiến dịch chờ duyệt và đã duyệt
@@ -34,6 +107,8 @@ class AdminController extends Controller
 
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
+            'chartData' => $chartData,
+            'recentActivities' => $recentActivities,
             'users' => $users,
             'pendingCampaigns' => $pendingCampaigns,
             'activeCampaigns' => $activeCampaigns,

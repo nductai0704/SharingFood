@@ -33,6 +33,8 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+                'notifications' => $request->user() ? $request->user()->notifications()->latest()->take(10)->get() : [],
+                'unreadNotificationsCount' => $request->user() ? $request->user()->unreadNotifications()->count() : 0,
                 'receivedClaims' => $request->user() ? \App\Models\FoodClaim::whereHas('foodPost', function ($query) use ($request) {
                         $query->where('user_id', $request->user()->id);
                     })
@@ -43,6 +45,12 @@ class HandleInertiaRequests extends Middleware
                     ->with(['foodPost.user'])
                     ->latest()
                     ->get() : [],
+                'pendingDonationsCount' => $request->user() && $request->user()->role === 'charity'
+                    ? \App\Models\CampaignDonation::where('status', 'pending')
+                        ->whereHas('campaign', function($q) use ($request) {
+                            $q->where('user_id', $request->user()->id);
+                        })->count()
+                    : 0,
             ],
         ];
     }

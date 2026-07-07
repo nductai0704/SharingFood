@@ -10,6 +10,10 @@ const props = defineProps({
         type: Array,
         default: () => [],
     },
+    completedDonations: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const activeSubTab = ref('receiving'); // 'receiving' or 'giving'
@@ -94,6 +98,17 @@ const formatDate = (dateStr) => {
             >
                 📤 Lịch sử cho thực phẩm ({{ givingClaims.length }})
             </button>
+            <button
+                @click="activeSubTab = 'donating'"
+                :class="[
+                    activeSubTab === 'donating'
+                        ? 'bg-white text-emerald-700 font-bold shadow-sm'
+                        : 'text-gray-600 hover:text-emerald-600'
+                ]"
+                class="flex-1 py-2 px-3 text-center rounded-xl font-semibold text-xs transition duration-200 cursor-pointer flex items-center justify-center gap-1.5"
+            >
+                🎁 Quyên góp từ thiện ({{ completedDonations.length }})
+            </button>
         </div>
 
         <!-- Content list -->
@@ -162,6 +177,40 @@ const formatDate = (dateStr) => {
                     <div class="flex justify-between items-center text-xs text-gray-500 pt-2 border-t border-gray-50">
                         <span>Số lượng: <strong class="text-gray-800">{{ claim.quantity }} {{ claim.food_post?.unit }}</strong></span>
                         <span class="text-[10px]">{{ formatDate(claim.created_at) }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 3: Donating to Charity -->
+            <div v-if="activeSubTab === 'donating'" class="space-y-3">
+                <div v-if="completedDonations.length === 0" class="text-center py-8 text-gray-400 text-xs italic">
+                    Bạn chưa đóng góp cho chiến dịch từ thiện nào.
+                </div>
+                <div
+                    v-for="donation in completedDonations"
+                    :key="'don-' + donation.id"
+                    class="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow transition duration-200 space-y-3"
+                >
+                    <div class="flex justify-between items-start gap-4">
+                        <div>
+                            <h4 class="font-bold text-gray-900 text-sm leading-snug">
+                                Chiến dịch: <span class="text-emerald-700">{{ donation.campaign?.title }}</span>
+                            </h4>
+                            <p class="text-[11px] text-gray-500 mt-1">
+                                Món quà: <span class="font-semibold text-gray-700">{{ donation.campaign_item?.item_name || 'Vật phẩm' }}</span>
+                            </p>
+                            <p class="text-[11px] text-gray-500">
+                                Tổ chức: <span class="font-semibold text-gray-700">{{ donation.campaign?.user?.name || 'Mái ấm' }}</span>
+                            </p>
+                        </div>
+                        <span class="text-[9px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full border shrink-0 bg-emerald-50 text-emerald-700 border-emerald-100">
+                            Đã tiếp nhận
+                        </span>
+                    </div>
+
+                    <div class="flex justify-between items-center text-xs text-gray-500 pt-2 border-t border-gray-50">
+                        <span>Số lượng góp: <strong class="text-emerald-600">+{{ donation.donation_quantity }} {{ donation.unit || '' }}</strong></span>
+                        <span class="text-[10px]">{{ formatDate(donation.updated_at) }}</span>
                     </div>
                 </div>
             </div>

@@ -1,9 +1,10 @@
 <script setup>
 import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
-import { Head, Link, usePage, router } from '@inertiajs/vue3';
+import { Head, Link, usePage, router, useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
     dbMyClaims: Array,
+    dbMyDonations: Array,
     dbActiveCampaigns: Array
 });
 
@@ -29,11 +30,14 @@ const dismissedNotifications = ref(JSON.parse(localStorage.getItem('sf_dismissed
 const lastOpenedNotificationTime = ref(localStorage.getItem('sf_last_opened_notifications') || '0');
 
 const unreadNotificationsCount = computed(() => {
-    return allNotifications.value.filter(item => {
-        const itemTime = new Date(item.created_at || item.claim.created_at).getTime();
+    let count = page.props.auth.unreadNotificationsCount || 0;
+    const claimCount = allNotifications.value.filter(item => {
+        if (item.is_db_notification) return false;
+        const itemTime = new Date(item.created_at || item.claim?.created_at).getTime();
         const lastOpenedTime = new Date(lastOpenedNotificationTime.value).getTime();
         return itemTime > lastOpenedTime;
     }).length;
+    return count + claimCount;
 });
 
 const toggleNotification = () => {
@@ -128,6 +132,22 @@ const allNotifications = computed(() => {
             });
         }
     });
+
+    // 3. Database Notifications (ví dụ: NewDonationNotification)
+    if (page.props.auth.notifications) {
+        page.props.auth.notifications.forEach(n => {
+            if (n.read_at) return;
+            list.push({
+                id: n.id,
+                type: n.data.type,
+                title: 'Có lượt quyên góp mới',
+                message: n.data.message,
+                url: n.data.url,
+                created_at: n.created_at,
+                is_db_notification: true
+            });
+        });
+    }
 
     // Sắp xếp theo thời gian mới nhất
     return list.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
@@ -425,6 +445,78 @@ const getUserLocation = () => {
     }
 };
 
+// ---- THÔNG TIN SHIPPER CỦA QUYÊN GÓP ----
+const showShipperModal = ref(false);
+const selectedDonationForShipper = ref(null);
+const shipperForm = useForm({
+    shipper_name: '',
+    shipper_license_plate: ''
+});
+
+const openShipperModal = (donation) => {
+    selectedDonationForShipper.value = donation;
+    selectedClaimForShipper.value = null;
+    shipperForm.shipper_name = donation.shipper_name || '';
+    shipperForm.shipper_license_plate = donation.shipper_license_plate || '';
+    showShipperModal.value = true;
+};
+
+const selectedClaimForShipper = ref(null);
+const openClaimShipperModal = (claim) => {
+    selectedClaimForShipper.value = claim;
+    selectedDonationForShipper.value = null;
+    shipperForm.shipper_name = claim.delivery_service_company || '';
+    shipperForm.shipper_license_plate = claim.driver_license_plate || '';
+    showShipperModal.value = true;
+};
+
+const submitShipperForm = () => {
+    if (selectedDonationForShipper.value) {
+        shipperForm.patch(route('donations.update_shipper', selectedDonationForShipper.value.donation_code), {
+            preserveScroll: true,
+            onSuccess: () => {
+                showShipperModal.value = false;
+            }
+        });
+    } else if (selectedClaimForShipper.value) {
+        shipperForm.patch(route('food-claims.update_shipper', selectedClaimForShipper.value.id), {
+            preserveScroll: true,
+            onSuccess: () => {
+                showShipperModal.value = false;
+                // Nếu đang dùng computed từ inertia props thì trang sẽ tự reload dữ liệu mới
+            }
+        });
+    }
+};
+
+const groupedMyDonations = computed(() => {
+    if (!props.dbMyDonations) return [];
+    
+    const groups = {};
+    props.dbMyDonations.forEach(donation => {
+        const code = donation.donation_code;
+        if (!groups[code]) {
+            groups[code] = {
+                donation_code: code,
+                campaign: donation.campaign,
+                status: donation.status,
+                shipping_method: donation.shipping_method,
+                shipper_name: donation.shipper_name,
+                shipper_license_plate: donation.shipper_license_plate,
+                items: []
+            };
+        }
+        groups[code].items.push({
+            id: donation.id,
+            item_name: donation.campaign_item?.item_name,
+            quantity: donation.donation_quantity,
+            unit: donation.campaign_item?.unit || ''
+        });
+    });
+    
+    return Object.values(groups);
+});
+
 // Khởi tạo bản đồ Leaflet
 const initMap = () => {
     if (typeof L === 'undefined') return;
@@ -673,6 +765,56 @@ watch(() => page.props.auth.user, (newUser) => {
         }
     }
 }, { deep: true });
+
+// ---- DONATION MODAL LOGIC ----
+const showDonationModal = ref(false);
+const selectedCampaignForDonation = ref(null);
+const donationForm = useForm({
+    items: [],
+    food_description: '',
+    shipping_method: 'self_delivery'
+});
+
+const openDonationModal = (campaign) => {
+    if (!page.props.auth.user) {
+        router.visit(route('login'));
+        return;
+    }
+    selectedCampaignForDonation.value = campaign;
+    
+    // Khởi tạo danh sách các món đồ có thể quyên góp
+    donationForm.items = (campaign.items || []).map((item, index) => ({
+        campaign_item_id: item.id,
+        item_name: item.item_name,
+        target_quantity: item.target_quantity,
+        current_quantity: item.current_quantity,
+        donation_quantity: 1,
+        unit: item.unit || '',
+        selected: index === 0 // Chọn sẵn món đầu tiên
+    }));
+    
+    donationForm.food_description = '';
+    donationForm.shipping_method = 'self_delivery';
+    showDonationModal.value = true;
+};
+
+const submitDonation = () => {
+    const hasSelected = donationForm.items.some(i => i.selected);
+    if (!hasSelected) {
+        alert('Vui lòng chọn ít nhất một sản phẩm để quyên góp!');
+        return;
+    }
+
+    donationForm.transform((data) => ({
+        ...data,
+        items: data.items.filter(i => i.selected)
+    })).post(route('campaign-donations.store', selectedCampaignForDonation.value.id), {
+        preserveScroll: true,
+        onSuccess: () => {
+            showDonationModal.value = false;
+        }
+    });
+};
 </script>
 
 
@@ -757,6 +899,7 @@ watch(() => page.props.auth.user, (newUser) => {
                             <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'incoming_cancelled' || item.type === 'outgoing_cancelled'">Đã huỷ</span>
                             <span class="font-bold text-[10px] uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" v-else-if="item.type === 'outgoing_approved'">Đã duyệt</span>
                             <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'outgoing_rejected'">Từ chối</span>
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100" v-else-if="item.type === 'new_donation'">Quyên góp mới</span>
                           </div>
 
                           <p class="text-gray-800 text-xs">{{ item.message }}</p>
@@ -788,6 +931,15 @@ watch(() => page.props.auth.user, (newUser) => {
                             class="flex-1 bg-gray-50 hover:bg-red-50 text-gray-600 hover:text-red-600 font-semibold text-[10px] py-1 rounded-lg border border-gray-200 hover:border-red-100 transition text-center cursor-pointer"
                           >
                             Từ chối
+                          </button>
+                        </template>
+                        <!-- Database Notifications -->
+                        <template v-else-if="item.is_db_notification">
+                          <button 
+                            @click.stop="handleDbNotificationClick(item)" 
+                            class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition text-center cursor-pointer shadow-sm"
+                          >
+                            Xem chi tiết
                           </button>
                         </template>
                         <!-- Các thông báo khác chỉ cần nút Đóng (Dismiss) -->
@@ -1134,19 +1286,27 @@ watch(() => page.props.auth.user, (newUser) => {
                   <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Tiến độ quyên góp</p>
                   <div class="space-y-2.5 max-h-[120px] overflow-y-auto pr-1 custom-scrollbar">
                     <div class="space-y-1.5" v-for="item in (campaign.items || [])" :key="item.id">
-                      <div class="flex justify-between text-[11px] font-semibold">
+                      <div class="flex justify-between items-start text-[11px] font-semibold">
                         <span class="text-gray-700 truncate mr-2" :title="item.item_name">{{ item.item_name }}</span>
-                        <span class="text-emerald-600 shrink-0 font-bold">
-                          {{ item.current_quantity }} / {{ item.target_quantity }} ({{ Math.round((item.current_quantity / Math.max(item.target_quantity, 1)) * 100) }}%)
-                        </span>
+                        <div class="flex flex-col items-end shrink-0">
+                            <span class="text-emerald-600 font-bold">
+                              {{ item.current_quantity }} / {{ item.target_quantity }} {{ item.unit || '' }} ({{ Math.round((item.current_quantity / Math.max(item.target_quantity, 1)) * 100) }}%)
+                            </span>
+                            <span v-if="item.pending_quantity > 0" class="text-amber-500 text-[10px] font-bold mt-0.5">
+                              + {{ item.pending_quantity }} Đang chuyển tới
+                            </span>
+                        </div>
                       </div>
                       <div class="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden shadow-inner">
                         <div class="bg-gradient-to-r from-emerald-400 to-teal-500 h-full rounded-full transition-all duration-700" :style="{ width: Math.round((item.current_quantity / Math.max(item.target_quantity, 1)) * 100) + '%' }"></div>
                       </div>
                     </div>
                   </div>
-                  <button class="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs py-3 rounded-xl transition shadow-md hover:shadow-lg mt-3 flex items-center justify-center gap-2">
+                  <button v-if="campaign.status === 'active' && new Date(campaign.end_date) >= new Date(new Date().setHours(0,0,0,0))" @click="openDonationModal(campaign)" class="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs py-3 rounded-xl transition shadow-md hover:shadow-lg mt-3 flex items-center justify-center gap-2">
                     <span>❤️</span> Đóng góp ngay
+                  </button>
+                  <button v-else disabled class="w-full bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed font-bold text-xs py-3 rounded-xl transition mt-3 flex items-center justify-center gap-2">
+                    <span>🔒</span> {{ campaign.status === 'closed' ? 'Đã chốt đi phát' : (campaign.status === 'completed' ? 'Đã hoàn thành' : 'Đã đóng cổng quyên góp') }}
                   </button>
                 </div>
               </div>
@@ -1171,11 +1331,11 @@ watch(() => page.props.auth.user, (newUser) => {
             <div class="flex justify-between items-center border-b border-gray-50 pb-3">
               <h3 class="font-bold text-gray-950 text-sm">Yêu cầu & Giao nhận</h3>
               <span class="text-[10px] bg-emerald-50 text-emerald-700 font-bold px-2 py-0.5 rounded border border-emerald-100">
-                {{ activeClaims.length + approvedReceivedClaims.length }} giao dịch
+                {{ activeClaims.length + approvedReceivedClaims.length + (groupedMyDonations ? groupedMyDonations.length : 0) }} giao dịch
               </span>
             </div>
             
-            <div v-if="activeClaims.length === 0 && approvedReceivedClaims.length === 0" class="text-center py-6 text-gray-400 text-xs">
+            <div v-if="activeClaims.length === 0 && approvedReceivedClaims.length === 0 && (!groupedMyDonations || groupedMyDonations.length === 0)" class="text-center py-6 text-gray-400 text-xs">
               Không có giao dịch nào đang xử lý.
             </div>
             
@@ -1205,6 +1365,17 @@ watch(() => page.props.auth.user, (newUser) => {
                   </div>
 
                   <div class="mt-2 pt-2 border-t border-gray-100/50 text-[11px] space-y-1 text-left">
+                    <div v-if="claim.shipping_method === 'delivery_service'" class="bg-orange-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1 relative mb-2 border border-orange-100/50">
+                        <p>🚚 <b>Dịch vụ giao hàng:</b></p>
+                        <p>Tên tài xế: <span class="font-bold">{{ claim.delivery_service_company || 'Chưa cập nhật' }}</span></p>
+                        <p>Biển số xe: <span class="font-bold">{{ claim.driver_license_plate || 'Chưa cập nhật' }}</span></p>
+                        <div class="pt-1.5 border-t border-orange-100/50 mt-1.5">
+                            <button @click="openClaimShipperModal(claim)" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition text-center cursor-pointer shadow-sm">
+                                Cập nhật thông tin Shipper
+                            </button>
+                        </div>
+                    </div>
+
                     <!-- Trạng thái Chờ duyệt -->
                     <div v-if="claim.status === 'pending'" class="text-amber-600 bg-amber-50/50 p-1.5 rounded-lg border border-amber-100/50 flex items-start gap-1">
                       <span class="shrink-0 mt-0.5">⚠️</span>
@@ -1305,12 +1476,99 @@ watch(() => page.props.auth.user, (newUser) => {
                   </div>
                 </div>
               </div>
+
+              <!-- PHẦN 3: BÀI QUYÊN GÓP (campaign_donations) -->
+              <div v-if="groupedMyDonations && groupedMyDonations.length > 0" class="space-y-2 pt-2 border-t border-gray-100/50">
+                <div class="text-[10px] font-bold text-orange-700 tracking-wider uppercase mb-1 flex items-center gap-1">
+                  📦 Đơn quyên góp của bạn ({{ groupedMyDonations.length }})
+                </div>
+                <div 
+                  v-for="group in groupedMyDonations" 
+                  :key="'group-' + group.donation_code" 
+                  class="p-3 bg-orange-50/20 rounded-2xl border border-orange-100/30 space-y-2 text-xs"
+                >
+                  <div class="flex justify-between items-start gap-2">
+                    <div class="font-bold text-gray-900 line-clamp-1 flex-1 text-left">
+                      {{ group.campaign?.title || 'Chiến dịch' }}
+                    </div>
+                    <span :class="group.status === 'pending' ? 'bg-amber-50 text-amber-700 border-amber-100' : 'bg-emerald-50 text-emerald-700 border-emerald-100'" class="text-[9px] px-1.5 py-0.5 rounded border font-bold shrink-0">
+                      {{ group.status === 'pending' ? 'Đang chuyển' : 'Đã nhận' }}
+                    </span>
+                  </div>
+                  
+                  <div class="flex justify-between items-center text-[11px]">
+                    <span class="text-gray-500">Mã đơn:</span>
+                    <span class="font-extrabold text-gray-900 bg-orange-100 px-1.5 py-0.5 rounded-md">{{ group.donation_code }}</span>
+                  </div>
+
+                  <div class="bg-white p-2 rounded-xl border border-gray-100 text-[11px] text-gray-600 mt-1">
+                    <p class="font-semibold text-gray-800 mb-1">Sản phẩm quyên góp:</p>
+                    <ul class="space-y-1">
+                      <li v-for="item in group.items" :key="item.id" class="flex justify-between">
+                        <span>- {{ item.item_name }}</span>
+                        <span class="font-bold text-emerald-600">+{{ item.quantity }} {{ item.unit }}</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  <div class="mt-2 pt-2 border-t border-gray-100/50 text-[11px] space-y-1 text-left">
+                    <div v-if="group.shipping_method === 'self_delivery'" class="text-blue-600 bg-blue-50/50 p-1.5 rounded-lg border border-blue-100/50 flex items-start gap-1">
+                      <span class="shrink-0 mt-0.5">🚶</span>
+                      <span>Bạn tự mang tới điểm tập kết.</span>
+                    </div>
+                    <div v-else-if="group.shipping_method === 'delivery_service'" class="bg-orange-50/50 p-2.5 rounded-2xl text-gray-600 space-y-1 relative">
+                        <p>🚚 <b>Dịch vụ giao hàng:</b></p>
+                        <p>Tên tài xế: <span class="font-bold">{{ group.shipper_name || 'Chưa cập nhật' }}</span></p>
+                        <p>Biển số xe: <span class="font-bold">{{ group.shipper_license_plate || 'Chưa cập nhật' }}</span></p>
+                        <div v-if="group.status === 'pending'" class="pt-1.5 border-t border-orange-100/50 mt-1.5">
+                            <button @click="openShipperModal(group)" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition text-center cursor-pointer shadow-sm">
+                                Cập nhật thông tin Shipper
+                            </button>
+                        </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
     </main>
+
+    <!-- MODAL CẬP NHẬT SHIPPER (CHO DONATIONS) -->
+    <div v-if="showShipperModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-[60] animate-fade-in">
+      <div class="bg-white rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl relative text-left">
+        <div class="p-6">
+          <div class="flex justify-between items-start mb-4">
+            <h3 class="text-lg font-extrabold text-gray-900">Cập nhật Shipper</h3>
+            <button @click="showShipperModal = false" class="text-gray-400 hover:text-gray-600 transition p-1">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+            </button>
+          </div>
+          <p class="text-xs text-gray-500 mb-5">Vui lòng điền thông tin tài xế để Ban tổ chức đối soát khi nhận hàng.</p>
+          
+          <form @submit.prevent="submitShipperForm" class="space-y-4">
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Tên tài xế <span class="text-red-500">*</span></label>
+              <input v-model="shipperForm.shipper_name" type="text" class="w-full rounded-xl border-gray-200 focus:border-orange-600 focus:ring-orange-600 text-sm" placeholder="Nhập tên tài xế Grab, XanhSM..." required>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Biển số xe <span class="text-red-500">*</span></label>
+              <input v-model="shipperForm.shipper_license_plate" type="text" class="w-full rounded-xl border-gray-200 focus:border-orange-600 focus:ring-orange-600 text-sm" placeholder="Ví dụ: 59A-123.45" required>
+            </div>
+            <div class="flex justify-end gap-3 mt-6">
+                <button type="button" @click="showShipperModal = false" class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">
+                    Hủy
+                </button>
+                <button type="submit" :disabled="shipperForm.processing" class="px-5 py-2 text-sm font-bold text-white bg-orange-600 rounded-xl hover:bg-orange-700 disabled:opacity-50">
+                    Cập nhật
+                </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
 
     <!-- MODAL GỬI YÊU CẦU NHẬN THỰC PHẨM LẺ -->
     <div 
@@ -1409,9 +1667,8 @@ watch(() => page.props.auth.user, (newUser) => {
               <input type="text" v-model="claimForm.pickup_contact_phone" placeholder="SĐT liên hệ" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
           </div>
 
-          <div v-if="claimForm.shipping_method === 'delivery_service'" class="grid grid-cols-2 gap-3 mt-2">
-              <input type="text" v-model="claimForm.delivery_service_company" placeholder="Hãng xe (VD: Grab)" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
-              <input type="text" v-model="claimForm.driver_license_plate" placeholder="Biển số xe" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
+          <div v-if="claimForm.shipping_method === 'delivery_service'" class="mt-2 text-[11px] text-gray-500 italic px-1">
+              Bạn có thể cập nhật thông tin tài xế và biển số xe sau khi yêu cầu được duyệt.
           </div>
 
           <div class="flex items-center gap-3 pt-2">
@@ -1496,4 +1753,61 @@ watch(() => page.props.auth.user, (newUser) => {
           </div>
       </div>
   </div>
+
+  <div v-if="showDonationModal && selectedCampaignForDonation" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+        <div class="w-full max-w-md p-6 bg-white rounded-2xl shadow-xl relative animate-in zoom-in-95">
+            <h3 class="mb-4 text-xl font-bold text-gray-900">Gửi quyên góp - {{ selectedCampaignForDonation.title }}</h3>
+            <form @submit.prevent="submitDonation" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-3">Chọn các món đồ bạn muốn quyên góp</label>
+                    <div class="space-y-3 max-h-64 overflow-y-auto pr-2">
+                        <div v-for="(item, index) in donationForm.items" :key="item.campaign_item_id" 
+                             class="p-4 rounded-xl border transition-all duration-200"
+                             :class="item.selected ? 'border-emerald-500 bg-emerald-50/30 shadow-sm' : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50'">
+                            
+                            <label class="flex items-start gap-3 cursor-pointer">
+                                <input type="checkbox" v-model="item.selected" class="mt-1 w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 transition">
+                                <div class="flex-1">
+                                    <h4 class="font-bold text-gray-900 text-sm">{{ item.item_name }}</h4>
+                                    <p class="text-xs text-gray-500 mt-0.5">Tiến độ hiện tại: {{ item.current_quantity }} / {{ item.target_quantity }} {{ item.unit || '' }}</p>
+                                </div>
+                            </label>
+
+                            <div v-if="item.selected" class="mt-4 flex gap-3 animate-in fade-in slide-in-from-top-1 duration-200">
+                                <div class="w-1/2">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Số lượng</label>
+                                    <input type="number" min="1" v-model="item.donation_quantity" class="w-full rounded-lg border-gray-200 focus:border-emerald-500 focus:ring-emerald-500 text-sm py-2 bg-white" required>
+                                </div>
+                                <div class="w-1/2">
+                                    <label class="block text-xs font-medium text-gray-600 mb-1">Đơn vị</label>
+                                    <input type="text" v-model="item.unit" placeholder="VD: kg, thùng, hộp..." class="w-full rounded-lg border-gray-200 focus:border-emerald-500 focus:ring-emerald-500 text-sm py-2 bg-white" required>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Mô tả (Tuỳ chọn)</label>
+                    <textarea v-model="donationForm.food_description" class="w-full rounded-xl border-gray-200 focus:border-emerald-600 focus:ring-emerald-600 text-sm" rows="2" placeholder="Tình trạng, quy cách đóng gói..."></textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Phương thức giao hàng</label>
+                    <select v-model="donationForm.shipping_method" class="w-full rounded-xl border-gray-200 focus:border-emerald-600 focus:ring-emerald-600 text-sm" required>
+                        <option value="self_delivery">Tôi sẽ tự mang đến điểm tập kết</option>
+                        <option value="delivery_service">Gửi qua dịch vụ giao hàng (Grab, XanhSM...)</option>
+                    </select>
+                    <p v-if="donationForm.shipping_method === 'delivery_service'" class="text-[11px] text-gray-500 mt-1 italic">Bạn có thể bổ sung tên shipper và biển số xe sau khi gửi yêu cầu.</p>
+                </div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" @click="showDonationModal = false" class="px-4 py-2 text-sm font-medium text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200">
+                        Hủy
+                    </button>
+                    <button type="submit" class="px-5 py-2 text-sm font-bold text-white bg-[#006F60] rounded-xl hover:bg-[#005a4e] shadow-md transition-colors disabled:opacity-50" :disabled="donationForm.processing">
+                        <span v-if="donationForm.processing">Đang xử lý...</span>
+                        <span v-else>Xác nhận gửi</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
 </template>

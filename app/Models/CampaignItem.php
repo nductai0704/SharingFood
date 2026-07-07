@@ -19,4 +19,9 @@ class CampaignItem extends Model
     {
         return $this->belongsTo(Category::class);
     }
+
+    public function donations()
+    {
+        return $this->hasMany(CampaignDonation::class, 'campaign_item_id');
+    }
 }

@@ -26,6 +26,10 @@ defineProps({
         type: Array,
         default: () => [],
     },
+    completedDonations: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const activeTab = ref('info'); // 'info', 'history', 'security'
@@ -108,6 +112,7 @@ const activeTabTitle = computed(() => {
                             <TransactionHistory
                                 :receiving-claims="receivingClaims"
                                 :giving-claims="givingClaims"
+                                :completed-donations="completedDonations"
                                 class="w-full"
                             />
                         </div>
