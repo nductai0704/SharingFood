@@ -29,21 +29,35 @@ Route::get('/home', function () {
             ->get();
         
         $dbMyDonations = \App\Models\CampaignDonation::where('user_id', auth()->id())
-            ->with(['campaign.user', 'campaignItem'])
+            ->with(['campaign.user', 'campaign.items' => function ($query) {
+                $query->withSum(['donations as pending_quantity' => function ($q) {
+                    $q->where('status', 'pending');
+                }], 'donation_quantity');
+            }, 'campaignItem'])
             ->where('status', 'pending') // Only show pending donations
             ->latest()
             ->get();
     }
     
     // Load các chiến dịch đã được duyệt để hiển thị ngoài trang chủ
-    $dbActiveCampaigns = \App\Models\Campaign::with(['user', 'items' => function ($query) {
+    $campaignQuery = \App\Models\Campaign::with(['user', 'items' => function ($query) {
         $query->withSum(['donations as pending_quantity' => function ($q) {
             $q->where('status', 'pending');
         }], 'donation_quantity');
     }])
         ->where('status', 'active')
-        ->latest()
-        ->get();
+        ->where('end_date', '>=', now()->startOfDay());
+
+    if (auth()->check()) {
+        $campaignQuery->where('user_id', '!=', auth()->id());
+    }
+
+    $dbActiveCampaigns = $campaignQuery->latest()->get()->filter(function ($campaign) {
+        return $campaign->items->contains(function ($item) {
+            $total = $item->current_quantity + ($item->pending_quantity ?? 0);
+            return $total < $item->target_quantity;
+        });
+    })->values();
 
     return Inertia::render('Home', [
         'dbMyClaims' => $dbMyClaims,
@@ -54,6 +68,7 @@ Route::get('/home', function () {
 
 // Cập nhật thông tin shipper cho đơn khuyên góp
 Route::patch('/donations/{donation_code}/shipper', [\App\Http\Controllers\CampaignDonationController::class, 'updateShipper'])->middleware(['auth', 'verified'])->name('donations.update_shipper');
+Route::post('/donations/{donation_code}/cancel', [\App\Http\Controllers\CampaignDonationController::class, 'cancel'])->middleware(['auth', 'verified'])->name('donations.cancel');
 
 // API Frontend: Tìm đồ ăn xung quanh
 Route::get('/api/nearby-food', [FoodPostController::class, 'getNearbyFood']);
@@ -132,14 +147,36 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
             ->latest()
             ->get();
             
-        $dbMyCampaigns = \App\Models\Campaign::where('user_id', auth()->id())
-            ->with('items')
+        $campaignQuery = \App\Models\Campaign::with(['user', 'items' => function ($query) {
+            $query->withSum(['donations as pending_quantity' => function ($q) {
+                $q->where('status', 'pending');
+            }], 'donation_quantity');
+        }])
+            ->where('status', 'active')
+            ->where('end_date', '>=', now()->startOfDay())
+            ->where('user_id', '!=', auth()->id());
+            
+        $dbActiveCampaigns = $campaignQuery->latest()->get()->filter(function ($campaign) {
+            return $campaign->items->contains(function ($item) {
+                $total = $item->current_quantity + ($item->pending_quantity ?? 0);
+                return $total < $item->target_quantity;
+            });
+        })->values();
+
+        $dbMyDonations = \App\Models\CampaignDonation::where('user_id', auth()->id())
+            ->with(['campaign.user', 'campaign.items' => function ($query) {
+                $query->withSum(['donations as pending_quantity' => function ($q) {
+                    $q->where('status', 'pending');
+                }], 'donation_quantity');
+            }, 'campaignItem'])
+            ->where('status', 'pending')
             ->latest()
             ->get();
             
         return Inertia::render('Charity/Dashboard', [
             'dbMyClaims' => $dbMyClaims,
-            'dbMyCampaigns' => $dbMyCampaigns
+            'dbActiveCampaigns' => $dbActiveCampaigns,
+            'dbMyDonations' => $dbMyDonations
         ]);
     })->name('charity.dashboard');
 
@@ -190,6 +227,7 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
     
     // Xac nhan don quyen gop
     Route::post('/charity/donations/{donationCode}/verify', [\App\Http\Controllers\CampaignDonationController::class, 'verify'])->name('charity.donations.verify');
+    Route::post('/charity/donations/{donationCode}/reject', [\App\Http\Controllers\CampaignDonationController::class, 'rejectDonation'])->name('charity.donations.reject');
 });
 
 Route::middleware('auth')->group(function () {

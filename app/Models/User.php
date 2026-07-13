@@ -27,6 +27,8 @@ class User extends Authenticatable implements MustVerifyEmail
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'locked_until' => 'datetime',
+            'last_penalty_at' => 'datetime',
         ];
     }
 
@@ -62,4 +64,68 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->hasMany(FoodClaim::class);
     }
+
+    /**
+     * Deduct trust score and handle penalties (locking, banning).
+     */
+    public function penalizeTrustScore(int $points)
+    {
+        $this->trust_score = max(0, $this->trust_score - $points);
+        $this->last_penalty_at = now();
+
+        if ($this->trust_score < 50 && $this->status !== 'banned') {
+            $this->locked_until = now()->addDays(5);
+            $this->lock_count += 1;
+
+            // Ban permanently if locked 2 times
+            if ($this->lock_count >= 2) {
+                $this->status = 'banned';
+                $this->locked_until = null; // Banned is permanent
+            }
+        }
+
+        $this->save();
+    }
+
+    /**
+     * Add trust score up to a maximum of 100.
+     */
+    public function addTrustScore(int $points)
+    {
+        $this->trust_score = min(100, $this->trust_score + $points);
+        $this->save();
+    }
+
+    /**
+     * Check if user is currently locked from making transactions.
+     */
+    public function isLocked(): bool
+    {
+        if ($this->status === 'banned') {
+            return true;
+        }
+
+        if ($this->locked_until && $this->locked_until->isFuture()) {
+            return true;
+        }
+
+        // If locked_until has passed, clear it (auto-unlock)
+        if ($this->locked_until && $this->locked_until->isPast()) {
+            $this->locked_until = null;
+            $this->save();
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
+     * Get is_locked attribute for frontend.
+     */
+    public function getIsLockedAttribute(): bool
+    {
+        return $this->isLocked();
+    }
+
+    protected $appends = ['is_locked'];
 }

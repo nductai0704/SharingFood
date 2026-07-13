@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use App\Models\FoodPost;
 use Illuminate\Support\Facades\Storage;
 use App\Jobs\ModerateFoodPostImage;
+use Illuminate\Support\Facades\RateLimiter;
+use App\Models\FoodClaim;
 
 class FoodPostController extends Controller
 {
@@ -150,6 +152,31 @@ class FoodPostController extends Controller
      */
     public function claim(Request $request, $id)
     {
+        $user = auth()->user();
+
+        // 1. Kiểm tra tài khoản có bị khóa giao dịch không
+        if ($user->isLocked()) {
+            return back()->with('error', 'Tài khoản của bạn đang bị khóa giao dịch do điểm uy tín thấp. Vui lòng thử lại sau khi hết hạn khóa.');
+        }
+
+        // 2. Max Pending Limit: Tối đa 2 đơn xin thực phẩm pending
+        $pendingClaimsCount = FoodClaim::where('user_id', $user->id)
+            ->where('status', 'pending')
+            ->count();
+            
+        if ($pendingClaimsCount >= 2) {
+            return back()->with('error', 'Bạn đang có 2 yêu cầu nhận thực phẩm Đang chờ duyệt. Vui lòng đợi xác nhận hoặc hủy bớt trước khi tạo yêu cầu mới.');
+        }
+
+        // 3. Rate Limiter (Cooldown 3 phút cho cùng 1 bài viết)
+        $rateLimitKey = 'claim_food:' . $user->id . ':' . $id;
+        if (RateLimiter::tooManyAttempts($rateLimitKey, 2)) {
+            $seconds = RateLimiter::availableIn($rateLimitKey);
+            $minutes = ceil($seconds / 60);
+            return back()->with('error', "Bạn thao tác quá nhanh trên bài viết này. Vui lòng thử lại sau {$minutes} phút.");
+        }
+        RateLimiter::hit($rateLimitKey, 180); // 180 giây = 3 phút
+
         $request->validate([
             'quantity' => 'required|integer|min:1',
             'shipping_method' => 'nullable|string',
@@ -276,6 +303,11 @@ class FoodPostController extends Controller
                     $claim->cancel_reason = $cancelReason;
                     $claim->save();
                     
+                    // Apply penalty to the recipient
+                    if ($claim->user && in_array($cancelReason, ['Spam/Phá bĩnh', 'Người nhận không đến lấy đúng hẹn', 'Thôngত্তি người nhận không chính xác'])) {
+                        $claim->user->penalizeTrustScore(20);
+                    }
+                    
                     // Hoàn lại kho thực phẩm
                     $post->remain_quantity += $claim->quantity;
                     // Luôn restore status về available nếu còn số lượng và chưa hết hạn
@@ -311,13 +343,17 @@ class FoodPostController extends Controller
                 // Broadcast SAU KHI transaction đã commit thành công
                 if (!empty($result['broadcast'])) {
                     $b = $result['broadcast'];
-                    broadcast(new \App\Events\ClaimStatusUpdated(
-                        $b['claim_id'],
-                        $b['new_status'],
-                        $b['recipient_id'],
-                        $b['donor_id'],
-                        $b['cancel_reason']
-                    ));
+                    try {
+                        broadcast(new \App\Events\ClaimStatusUpdated(
+                            $b['claim_id'],
+                            $b['new_status'],
+                            $b['recipient_id'],
+                            $b['donor_id'],
+                            $b['cancel_reason']
+                        ));
+                    } catch (\Exception $e) {
+                        \Illuminate\Support\Facades\Log::warning('Pusher connection failed: ' . $e->getMessage());
+                    }
                 }
                 return redirect()->back()->with('success', $result['message']);
             } else {
@@ -363,6 +399,11 @@ class FoodPostController extends Controller
                 
                 $claim->save();
                 
+                // Apply penalty if the giver cancelled because of receiver's fault
+                if ($user->id === $post->user_id && $claim->user && in_array($cancelReason, ['Spam/Phá bĩnh', 'Người nhận không đến lấy đúng hẹn', 'Thông tin người nhận không chính xác'])) {
+                    $claim->user->penalizeTrustScore(20);
+                }
+                
                 // Hoàn lại kho thực phẩm
                 $post->remain_quantity += $claim->quantity;
                 
@@ -401,13 +442,17 @@ class FoodPostController extends Controller
                 // Broadcast SAU KHI transaction đã commit thành công
                 if (!empty($result['broadcast'])) {
                     $b = $result['broadcast'];
-                    broadcast(new \App\Events\ClaimStatusUpdated(
-                        $b['claim_id'],
-                        $b['new_status'],
-                        $b['recipient_id'],
-                        $b['donor_id'],
-                        $b['cancel_reason']
-                    ));
+                    try {
+                        broadcast(new \App\Events\ClaimStatusUpdated(
+                            $b['claim_id'],
+                            $b['new_status'],
+                            $b['recipient_id'],
+                            $b['donor_id'],
+                            $b['cancel_reason']
+                        ));
+                    } catch (\Exception $e) {
+                        \Illuminate\Support\Facades\Log::warning('Pusher connection failed: ' . $e->getMessage());
+                    }
                 }
                 return redirect()->back()->with('success', $result['message']);
             } else {
@@ -444,6 +489,12 @@ class FoodPostController extends Controller
                 $claim->status = 'completed';
                 $claim->save();
                 
+                // Reward trust score to the recipient
+                if ($claim->user) {
+                    $claim->user->addTrustScore(10);
+                    $claim->user->notify(new \App\Notifications\TrustScoreRewarded(10, 'Hoàn thành giao dịch', "Bạn được cộng 10 điểm uy tín vì giao dịch xin đồ từ bài viết \"{$post->title}\" đã hoàn thành thành công."));
+                }
+                
                 // Ghi nhật ký hệ thống
                 \App\Models\SystemLog::create([
                     'action' => 'Hoàn thành giao dịch',
@@ -453,7 +504,7 @@ class FoodPostController extends Controller
                     'created_at' => now()
                 ]);
                 
-                return ['success' => true, 'message' => 'Xác nhận hoàn thành giao dịch thành công! Chúc mừng hai bên!'];
+                return ['success' => true, 'message' => 'Xác nhận hoàn thành giao dịch thành công! Cộng 10 điểm uy tín cho người nhận.'];
             });
             
             if ($result['success']) {

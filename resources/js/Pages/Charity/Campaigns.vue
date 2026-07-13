@@ -71,6 +71,45 @@ const getProgressPercent = (current, target) => {
     if (!target) return 0;
     return Math.min(Math.round((current / target) * 100), 100);
 };
+
+const showRejectModal = ref(false);
+const selectedRejectDonationCode = ref(null);
+const isProcessing = ref(false);
+const rejectForm = ref({
+    reason: 'Spam/Phá bĩnh'
+});
+
+const rejectReasons = [
+    'Spam/Phá bĩnh',
+    'Không giao hàng',
+    'Liên lạc không được',
+    'Lý do khác'
+];
+
+const openRejectModal = (donationCode) => {
+    selectedRejectDonationCode.value = donationCode;
+    rejectForm.value.reason = 'Spam/Phá bĩnh';
+    showRejectModal.value = true;
+};
+
+const submitRejectDonation = () => {
+    if (selectedRejectDonationCode.value) {
+        isProcessing.value = true;
+        router.post(route('charity.donations.reject', selectedRejectDonationCode.value), {
+            reason: rejectForm.value.reason
+        }, {
+            preserveScroll: true,
+            preserveState: true,
+            onSuccess: () => {
+                showRejectModal.value = false;
+                selectedRejectDonationCode.value = null;
+            },
+            onFinish: () => {
+                isProcessing.value = false;
+            }
+        });
+    }
+};
 </script>
 
 <template>
@@ -167,7 +206,12 @@ const getProgressPercent = (current, target) => {
               <div class="flex justify-between items-start">
                 <div>
                   <p class="text-[13px] font-extrabold text-gray-900 bg-emerald-100 px-2 py-0.5 rounded-md inline-block mb-1.5">{{ donation.donation_code }}</p>
-                  <p class="text-sm font-bold text-gray-900">{{ donation.user?.name || 'Nhà hảo tâm' }} <span v-if="donation.user?.phone">({{ donation.user.phone }})</span></p>
+                  <div class="flex items-center gap-1.5 flex-wrap mb-0.5">
+                    <p class="text-sm font-bold text-gray-900">{{ donation.user?.name || 'Nhà hảo tâm' }} <span v-if="donation.user?.phone">({{ donation.user.phone }})</span></p>
+                    <span v-if="donation.user" :class="donation.user.trust_score < 70 ? 'text-red-600 bg-red-50 border-red-200' : 'text-amber-600 bg-amber-50 border-amber-200'" class="text-[10px] font-bold px-1.5 py-0.5 rounded-full border flex items-center gap-0.5" title="Điểm uy tín">
+                      ⭐ {{ donation.user.trust_score }}
+                    </span>
+                  </div>
                   <p class="text-xs text-gray-500 mt-0.5 line-clamp-1">Chiến dịch: <span class="font-medium text-emerald-700">{{ donation.campaign?.title }}</span></p>
                 </div>
                 <span class="bg-yellow-100 text-yellow-700 text-[10px] font-bold px-2 py-0.5 rounded uppercase shrink-0">Đang chờ</span>
@@ -206,13 +250,20 @@ const getProgressPercent = (current, target) => {
                 >
                   Chờ cập nhật Shipper
                 </button>
-                <button 
-                  v-else
-                  @click="verifyDonation(donation.donation_code)"
-                  class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-xl transition shadow-sm"
-                >
-                  Xác nhận đã nhận đủ {{ donation.items.length }} món
-                </button>
+                <div v-else class="flex gap-2">
+                  <button 
+                    @click="verifyDonation(donation.donation_code)"
+                    class="w-2/3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2 rounded-xl transition shadow-sm"
+                  >
+                    Đã nhận đủ {{ donation.items.length }} món
+                  </button>
+                  <button 
+                    @click="openRejectModal(donation.donation_code)"
+                    class="w-1/3 bg-red-100 hover:bg-red-200 text-red-700 font-bold text-[11px] py-2 rounded-xl transition shadow-sm border border-red-200"
+                  >
+                    Từ chối
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -302,6 +353,39 @@ const getProgressPercent = (current, target) => {
 
       </div>
     </div>
+
+    <!-- MODAL TỪ CHỐI ĐƠN QUYÊN GÓP -->
+    <div 
+      v-if="showRejectModal" 
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+    >
+        <div class="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-gray-100 text-left">
+            <h3 class="text-lg font-extrabold text-gray-900 mb-2">Từ chối quyên góp</h3>
+            <p class="text-xs text-gray-500 mb-4">Vui lòng chọn lý do từ chối đơn này:</p>
+            
+            <div class="space-y-2 mb-6">
+                <div 
+                    v-for="opt in rejectReasons" 
+                    :key="opt"
+                    @click="rejectForm.reason = opt"
+                    class="p-3.5 rounded-2xl border text-xs font-semibold transition cursor-pointer flex items-center justify-between"
+                    :class="rejectForm.reason === opt ? 'border-red-500 bg-red-50/50 text-red-700 shadow-sm shadow-red-100' : 'border-gray-100 bg-gray-50 hover:bg-gray-100 text-gray-700'"
+                >
+                    <span>{{ opt }}</span>
+                    <span v-if="rejectForm.reason === opt" class="text-red-500 font-bold">✓</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <button @click="showRejectModal = false" :disabled="isProcessing" class="flex-1 px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition text-center disabled:opacity-50">Đóng</button>
+                <button @click="submitRejectDonation" :disabled="isProcessing" class="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 shadow-md shadow-red-500/30 transition text-center disabled:opacity-50 flex justify-center items-center gap-2">
+                  <svg v-if="isProcessing" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  <span>{{ isProcessing ? 'Đang xử lý...' : 'Xác nhận' }}</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
   </AuthenticatedLayout>
 </template>
 <style scoped>

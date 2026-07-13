@@ -240,17 +240,29 @@ class CampaignController extends Controller
         DB::transaction(function () use ($campaign) {
             $campaign->update(['status' => 'closed']);
 
+            // Get pending donations to penalize donors
+            $pendingDonations = \App\Models\CampaignDonation::where('campaign_id', $campaign->id)
+                ->where('status', 'pending')
+                ->get();
+
+            foreach ($pendingDonations as $donation) {
+                if ($donation->user) {
+                    $donation->user->penalizeTrustScore(20);
+                }
+            }
+
             // Hủy các đơn pending
             \App\Models\CampaignDonation::where('campaign_id', $campaign->id)
                 ->where('status', 'pending')
                 ->update([
                     'status' => 'cancelled',
+                    'cancel_reason' => 'Boom hàng từ thiện',
                     // Ghi chú lý do hủy vào description nếu muốn
-                    'food_description' => DB::raw("CONCAT(COALESCE(food_description, ''), ' [Hủy do quá hạn tập kết thực tế trước ngày đi phát]')")
+                    'food_description' => DB::raw("CONCAT(COALESCE(food_description, ''), ' [Hủy do quá hạn tập kết thực tế]')")
                 ]);
         });
 
-        return back()->with('success', 'Đã chốt chiến dịch và hủy các đơn chờ quyên góp.');
+        return back()->with('success', 'Đã chốt chiến dịch và hủy các đơn chờ quyên góp. Các tài khoản vi phạm đã bị trừ điểm uy tín.');
     }
 
     public function exportReport(Campaign $campaign)

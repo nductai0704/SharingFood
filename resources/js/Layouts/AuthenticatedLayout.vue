@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { Head, Link, usePage, router } from '@inertiajs/vue3';
+import ToastMessage from '@/Components/ToastMessage.vue';
 
 const isMobileMenuOpen = ref(false);
 const isNotificationOpen = ref(false);
@@ -11,14 +12,11 @@ const dismissedNotifications = ref(JSON.parse(localStorage.getItem('sf_dismissed
 const lastOpenedNotificationTime = ref(localStorage.getItem('sf_last_opened_notifications') || '0');
 
 const unreadNotificationsCount = computed(() => {
-    let count = page.props.auth.unreadNotificationsCount || 0;
-    const claimCount = allNotifications.value.filter(item => {
-        if (item.is_db_notification) return false;
+    return allNotifications.value.filter(item => {
         const itemTime = new Date(item.created_at || item.claim?.created_at).getTime();
         const lastOpenedTime = new Date(lastOpenedNotificationTime.value).getTime();
         return itemTime > lastOpenedTime;
     }).length;
-    return count + claimCount;
 });
 
 const toggleNotification = () => {
@@ -117,14 +115,19 @@ const allNotifications = computed(() => {
         });
     }
 
-    // 3. Database Notifications (ví dụ: NewDonationNotification)
+    // 3. Database Notifications (ví dụ: NewDonationNotification, TrustScoreRewarded)
     if (page.props.auth.notifications) {
         page.props.auth.notifications.forEach(n => {
             if (n.read_at) return; // Hide read notifications, or keep them if you want. Let's keep unread only.
+            
+            let title = 'Thông báo';
+            if (n.data.type === 'new_donation') title = 'Có lượt quyên góp mới';
+            else if (n.data.type === 'trust_score_rewarded') title = 'Cộng điểm uy tín';
+            
             list.push({
                 id: n.id,
                 type: n.data.type,
-                title: 'Có lượt quyên góp mới',
+                title: title,
                 message: n.data.message,
                 url: n.data.url,
                 created_at: n.created_at,
@@ -159,6 +162,9 @@ onMounted(() => {
     startNotificationPolling();
     document.addEventListener('click', handleClickOutside);
 
+    // Lắng nghe thay đổi từ các tab khác (đồng bộ chuông)
+    window.addEventListener('storage', handleStorageEvent);
+
     // Lắng nghe real-time claim status updates qua Reverb
     const userId = page.props.auth.user?.id;
     if (userId && window.Echo) {
@@ -176,6 +182,7 @@ onMounted(() => {
 onUnmounted(() => {
     stopNotificationPolling();
     document.removeEventListener('click', handleClickOutside);
+    window.removeEventListener('storage', handleStorageEvent);
 
     const userId = page.props.auth.user?.id;
     if (userId && window.Echo) {
@@ -254,8 +261,18 @@ const handleUpdateClaimStatus = (claimId, status) => {
     });
 };
 
+const handleStorageEvent = (e) => {
+    if (e.key === 'sf_last_opened_notifications') {
+        lastOpenedNotificationTime.value = e.newValue;
+    } else if (e.key === 'sf_dismissed_notifications') {
+        dismissedNotifications.value = JSON.parse(e.newValue || '[]');
+    }
+};
+
 const handleDbNotificationClick = (notification) => {
+    isNotificationOpen.value = false;
     router.post(route('notifications.read', notification.id), {}, {
+        preserveScroll: true,
         onSuccess: () => {
             if (notification.url) {
                 router.visit(notification.url);
@@ -300,7 +317,13 @@ const handleDbNotificationClick = (notification) => {
                 <div v-else class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
                   {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
                 </div>
-                <span class="text-sm font-medium">{{ $page.props.auth.user.name }}</span>
+                <span class="text-sm font-medium flex items-center gap-2">
+                  {{ $page.props.auth.user.name }}
+                  <span :class="$page.props.auth.user.trust_score < 70 ? 'text-red-600 bg-red-50 border-red-200' : 'text-amber-600 bg-amber-50 border-amber-200'" class="text-[10px] font-bold px-1.5 py-0.5 rounded-full border shadow-sm flex items-center gap-1" title="Điểm uy tín">
+                    <svg :class="$page.props.auth.user.trust_score < 70 ? 'text-red-500' : 'text-amber-500'" class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+                    {{ $page.props.auth.user.trust_score }}
+                  </span>
+                </span>
               </Link>
               <Link :href="route('logout')" method="post" as="button" class="text-sm text-red-600 hover:text-red-700 font-semibold transition">
                 Đăng xuất
@@ -352,13 +375,23 @@ const handleDbNotificationClick = (notification) => {
                             <span class="font-bold text-[10px] uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100" v-else-if="item.type === 'outgoing_approved'">Đã duyệt</span>
                             <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'outgoing_rejected'">Từ chối</span>
                             <span class="font-bold text-[10px] uppercase tracking-wider text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100" v-else-if="item.type === 'new_donation'">Quyên góp mới</span>
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100" v-else-if="item.type === 'trust_score_rewarded'">⭐ +10 Uy tín</span>
                           </div>
 
-                          <p class="text-gray-800 text-xs">{{ item.message }}</p>
+                          <p v-if="item.type === 'incoming_pending'" class="text-gray-800 text-[11px] leading-relaxed">
+                              Muốn nhận <span class="font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">{{ item.claim.quantity }} {{ item.claim.food_post?.unit }}</span> từ bài viết <span class="font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">"{{ item.claim.food_post?.title }}"</span>
+                          </p>
+                          <p v-else class="text-gray-800 text-xs">{{ item.message }}</p>
 
                           <!-- Hiển thị phương thức lấy hàng cho Incoming Pending -->
                           <div v-if="item.type === 'incoming_pending'" class="text-[10px] text-gray-500 bg-gray-50 p-1.5 rounded border border-gray-100/50 mt-1">
-                            🚚 <b>Cách nhận:</b>
+                            <div class="flex items-center gap-1 mb-1">
+                                <span class="font-bold text-gray-700">Người xin: {{ item.claim.user?.name }}</span>
+                                <span v-if="item.claim.user" :class="item.claim.user.trust_score < 70 ? 'text-red-600 bg-red-50 border-red-200' : 'text-amber-600 bg-amber-50 border-amber-200'" class="text-[9px] font-bold px-1.5 py-0.5 rounded-full border flex items-center gap-0.5" title="Điểm uy tín">
+                                  ⭐ {{ item.claim.user.trust_score }}
+                                </span>
+                            </div>
+                            📦 <b>Cách nhận:</b>
                             <span v-if="item.claim.shipping_method === 'self_pickup'" class="text-blue-600 font-semibold ml-1">Tự đến lấy</span>
                             <span v-else-if="item.claim.shipping_method === 'relative_pickup'" class="text-indigo-600 font-semibold ml-1">Nhờ người thân lấy ({{ item.claim.pickup_contact_name }})</span>
                             <span v-else-if="item.claim.shipping_method === 'delivery_service'" class="text-orange-600 font-semibold ml-1">Giao hàng ({{ item.claim.delivery_service_company }})</span>
@@ -391,7 +424,7 @@ const handleDbNotificationClick = (notification) => {
                             @click.stop="handleDbNotificationClick(item)" 
                             class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition text-center cursor-pointer shadow-sm"
                           >
-                            Xem chi tiết
+                            {{ item.url ? 'Xem chi tiết' : 'Đã hiểu' }}
                           </button>
                         </template>
                         <!-- Các thông báo khác chỉ cần nút Đóng (Dismiss) -->
@@ -451,8 +484,25 @@ const handleDbNotificationClick = (notification) => {
                           <span class="font-bold text-[8px] uppercase tracking-wider text-emerald-700 bg-emerald-50 px-1 py-0.5 rounded" v-else-if="item.type === 'outgoing_approved'">Đã duyệt</span>
                           <span class="font-bold text-[8px] uppercase tracking-wider text-red-700 bg-red-50 px-1 py-0.5 rounded" v-else-if="item.type === 'outgoing_rejected'">Từ chối</span>
                           <span class="font-bold text-[8px] uppercase tracking-wider text-purple-700 bg-purple-50 px-1 py-0.5 rounded" v-else-if="item.type === 'new_donation'">Quyên góp mới</span>
+                          <span class="font-bold text-[8px] uppercase tracking-wider text-amber-700 bg-amber-50 px-1 py-0.5 rounded" v-else-if="item.type === 'trust_score_rewarded'">⭐ +10 Uy tín</span>
                         </div>
-                        <p class="text-gray-800 text-[11px]">{{ item.message }}</p>
+                        <p v-if="item.type === 'incoming_pending'" class="text-gray-800 text-[11px] leading-relaxed">
+                            Muốn nhận <span class="font-bold text-emerald-600 bg-emerald-50 px-1 py-0.5 rounded border border-emerald-100">{{ item.claim.quantity }} {{ item.claim.food_post?.unit }}</span> từ bài viết <span class="font-bold text-blue-700 bg-blue-50 px-1 py-0.5 rounded border border-blue-100">"{{ item.claim.food_post?.title }}"</span>
+                        </p>
+                        <p v-else class="text-gray-800 text-[11px]">{{ item.message }}</p>
+                        <!-- Hiển thị phương thức lấy hàng cho Incoming Pending -->
+                        <div v-if="item.type === 'incoming_pending'" class="text-[10px] text-gray-500 bg-gray-50 p-1.5 rounded border border-gray-100/50 mt-1">
+                          <div class="flex items-center gap-1 mb-1">
+                              <span class="font-bold text-gray-700">Người xin: {{ item.claim.user?.name }}</span>
+                              <span v-if="item.claim.user" :class="item.claim.user.trust_score < 70 ? 'text-red-600 bg-red-50 border-red-200' : 'text-amber-600 bg-amber-50 border-amber-200'" class="text-[9px] font-bold px-1.5 py-0.5 rounded-full border flex items-center gap-0.5" title="Điểm uy tín">
+                                ⭐ {{ item.claim.user.trust_score }}
+                              </span>
+                          </div>
+                          📦 <b>Cách nhận:</b>
+                          <span v-if="item.claim.shipping_method === 'self_pickup'" class="text-blue-600 font-semibold ml-1">Tự đến lấy</span>
+                          <span v-else-if="item.claim.shipping_method === 'relative_pickup'" class="text-indigo-600 font-semibold ml-1">Nhờ người thân lấy ({{ item.claim.pickup_contact_name }})</span>
+                          <span v-else-if="item.claim.shipping_method === 'delivery_service'" class="text-orange-600 font-semibold ml-1">Giao hàng ({{ item.claim.delivery_service_company }})</span>
+                        </div>
                       </div>
                       <div class="flex items-center gap-2 pt-1">
                         <!-- Yêu cầu mới cần Duyệt / Từ chối -->
@@ -462,7 +512,7 @@ const handleDbNotificationClick = (notification) => {
                         </template>
                         <!-- Database Notifications -->
                         <template v-else-if="item.is_db_notification">
-                          <button @click.stop="handleDbNotificationClick(item)" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] py-1 rounded-lg">Xem chi tiết</button>
+                          <button @click.stop="handleDbNotificationClick(item)" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold text-[10px] py-1 rounded-lg">{{ item.url ? 'Xem chi tiết' : 'Đã hiểu' }}</button>
                         </template>
                         <!-- Các thông báo khác chỉ cần nút Đóng (Dismiss) -->
                         <template v-else>
@@ -512,7 +562,13 @@ const handleDbNotificationClick = (notification) => {
             <div v-else class="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-700 font-semibold text-sm">
               {{ $page.props.auth.user.name.charAt(0).toUpperCase() }}
             </div>
-            <span class="text-sm font-medium">{{ $page.props.auth.user.name }}</span>
+            <span class="text-sm font-medium flex items-center gap-2">
+              {{ $page.props.auth.user.name }}
+              <span :class="$page.props.auth.user.trust_score < 70 ? 'text-red-600 bg-red-50 border-red-200' : 'text-amber-600 bg-amber-50 border-amber-200'" class="text-[10px] font-bold px-1.5 py-0.5 rounded-full border shadow-sm flex items-center gap-1" title="Điểm uy tín">
+                <svg :class="$page.props.auth.user.trust_score < 70 ? 'text-red-500' : 'text-amber-500'" class="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z"></path></svg>
+                {{ $page.props.auth.user.trust_score }}
+              </span>
+            </span>
           </Link>
           <Link :href="route('logout')" method="post" as="button" class="text-sm text-left text-red-600 hover:text-red-700 font-semibold transition">
             Đăng xuất
@@ -567,4 +623,6 @@ const handleDbNotificationClick = (notification) => {
           </div>
       </div>
   </div>
+  
+  <ToastMessage />
 </template>
