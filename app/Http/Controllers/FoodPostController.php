@@ -179,6 +179,7 @@ class FoodPostController extends Controller
 
         $request->validate([
             'quantity' => 'required|integer|min:1',
+            'message' => 'nullable|string|max:500',
             'shipping_method' => 'nullable|string',
             'pickup_contact_name' => 'nullable|string',
             'pickup_contact_phone' => 'nullable|string',
@@ -222,6 +223,7 @@ class FoodPostController extends Controller
                     'user_id' => $user->id,
                     'quantity' => $requestedQty,
                     'status' => 'pending',
+                    'message' => $request->input('message'),
                     'shipping_method' => $request->input('shipping_method', 'self_pickup'),
                     'pickup_contact_name' => $request->input('pickup_contact_name'),
                     'pickup_contact_phone' => $request->input('pickup_contact_phone'),

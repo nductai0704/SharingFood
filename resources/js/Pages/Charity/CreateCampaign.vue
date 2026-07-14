@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, onMounted } from 'vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
@@ -9,12 +9,56 @@ const form = useForm({
     location_details: '',
     latitude: null,
     longitude: null,
-    end_date: '',
-    execution_date: '',
+    web_deadline: '',
+    event_date: '',
     items: [
-        { item_name: '', target_quantity: 1, unit: '' }
+        { item_name: '', target_quantity: 1, unit: '', item_type: 'dry' }
     ],
 });
+
+const isCategorizing = ref(false);
+
+const categorizeByAi = async () => {
+    if (form.items.length === 0) return;
+    
+    // Check if names are filled
+    const itemNames = form.items.map(i => i.item_name).filter(n => n.trim() !== '');
+    if (itemNames.length === 0) {
+        alert("Vui lòng nhập ít nhất một tên vật phẩm để AI phân loại.");
+        return;
+    }
+
+    isCategorizing.value = true;
+    try {
+        const response = await fetch('/api/ai/categorize-food', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content')
+            },
+            body: JSON.stringify({ items: itemNames })
+        });
+        const result = await response.json();
+        
+        if (result.success && result.data) {
+            // Update items
+            form.items.forEach(item => {
+                if (result.data.fresh.includes(item.item_name)) {
+                    item.item_type = 'fresh';
+                } else {
+                    item.item_type = 'dry';
+                }
+            });
+        } else {
+            alert("Không thể phân loại tự động lúc này.");
+        }
+    } catch (error) {
+        console.error("Lỗi gọi AI: ", error);
+        alert("Có lỗi kết nối AI.");
+    } finally {
+        isCategorizing.value = false;
+    }
+};
 
 // Hàm tải động thư viện Leaflet (Map)
 const loadLeaflet = () => {
@@ -151,11 +195,12 @@ const geocodeAddress = async () => {
 };
 
 // Thêm một dòng vật phẩm mới
-const addItem = () => {
+const addItem = (type = 'dry') => {
     form.items.push({
         item_name: '',
         target_quantity: 1,
-        unit: ''
+        unit: '',
+        item_type: type
     });
 };
 
@@ -242,16 +287,16 @@ const submit = () => {
                             <!-- Thời gian -->
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Ngày đóng cổng quyên góp <span class="text-red-500">*</span></label>
-                                    <input v-model="form.end_date" type="date" class="w-full rounded-xl border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm" required>
-                                    <p class="text-[10px] text-gray-500 mt-1">Sau ngày này hệ thống sẽ khóa chức năng khuyên góp mới.</p>
-                                    <div v-if="form.errors.end_date" class="text-red-500 text-xs mt-1">{{ form.errors.end_date }}</div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Mốc 1: Hạn chót Đồ Khô (Web Deadline) <span class="text-red-500">*</span></label>
+                                    <input v-model="form.web_deadline" type="datetime-local" class="w-full rounded-xl border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm" required>
+                                    <p class="text-[10px] text-gray-500 mt-1">Sau mốc này, chỉ nhận Đồ Tươi. Đồ Khô bị khóa.</p>
+                                    <div v-if="form.errors.web_deadline" class="text-red-500 text-xs mt-1">{{ form.errors.web_deadline }}</div>
                                 </div>
                                 <div>
-                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Ngày đi phát (Execution Date) <span class="text-red-500">*</span></label>
-                                    <input v-model="form.execution_date" type="date" class="w-full rounded-xl border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm" required>
-                                    <p class="text-[10px] text-gray-500 mt-1">Ngày dự kiến mang đồ đi cứu trợ. Phải bằng hoặc sau ngày đóng cổng.</p>
-                                    <div v-if="form.errors.execution_date" class="text-red-500 text-xs mt-1">{{ form.errors.execution_date }}</div>
+                                    <label class="block text-sm font-semibold text-gray-700 mb-1">Mốc 2: Ngày đi phát (Event Date) <span class="text-red-500">*</span></label>
+                                    <input v-model="form.event_date" type="datetime-local" class="w-full rounded-xl border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm" required>
+                                    <p class="text-[10px] text-gray-500 mt-1">Cách Mốc 1 không quá 36 giờ.</p>
+                                    <div v-if="form.errors.event_date" class="text-red-500 text-xs mt-1">{{ form.errors.event_date }}</div>
                                 </div>
                             </div>
 
@@ -269,8 +314,10 @@ const submit = () => {
                     <div>
                         <div class="flex justify-between items-end border-b border-gray-100 pb-2 mb-4">
                             <h2 class="text-lg font-bold text-gray-900">Danh sách nhu yếu phẩm cần gọi</h2>
-                            <button type="button" @click="addItem" class="text-sm bg-emerald-100 text-emerald-700 hover:bg-emerald-200 font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1">
-                                ➕ Thêm vật phẩm
+                            <button type="button" @click="categorizeByAi" :disabled="isCategorizing" class="text-sm bg-purple-100 text-purple-700 hover:bg-purple-200 font-bold px-4 py-2 rounded-lg transition flex items-center gap-2">
+                                <span v-if="isCategorizing" class="animate-spin">🔄</span>
+                                <span v-else>🪄</span>
+                                {{ isCategorizing ? 'Đang phân loại...' : 'Gợi ý phân loại bằng AI' }}
                             </button>
                         </div>
                         
@@ -278,40 +325,87 @@ const submit = () => {
                             {{ form.errors.items }}
                         </div>
 
-                        <div class="space-y-4">
-                            <!-- Hiển thị mảng động items -->
-                            <div v-for="(item, index) in form.items" :key="index" class="p-4 bg-gray-50 border border-gray-200 rounded-xl relative group transition-all hover:border-emerald-300">
-                                <div class="flex flex-col md:flex-row gap-4 items-end">
-                                    
-                                    <!-- Item Name -->
-                                    <div class="flex-1 w-full">
-                                        <label class="block text-xs font-semibold text-gray-600 mb-1">Tên vật phẩm cần kêu gọi <span class="text-red-500">*</span></label>
-                                        <input v-model="item.item_name" type="text" class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" placeholder="VD: Gạo tẻ ST25, Sữa Vinamilk..." required>
-                                        <div v-if="form.errors[`items.${index}.item_name`]" class="text-red-500 text-xs mt-1">{{ form.errors[`items.${index}.item_name`] }}</div>
-                                    </div>
-
-                                    <!-- Target Quantity -->
-                                    <div class="w-full md:w-32">
-                                        <label class="block text-xs font-semibold text-gray-600 mb-1">Số lượng <span class="text-red-500">*</span></label>
-                                        <input v-model="item.target_quantity" type="number" min="1" class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" required>
-                                        <div v-if="form.errors[`items.${index}.target_quantity`]" class="text-red-500 text-xs mt-1">{{ form.errors[`items.${index}.target_quantity`] }}</div>
-                                    </div>
-
-                                    <!-- Unit -->
-                                    <div class="w-full md:w-32">
-                                        <label class="block text-xs font-semibold text-gray-600 mb-1">Đơn vị (VD: kg) <span class="text-red-500">*</span></label>
-                                        <input v-model="item.unit" type="text" placeholder="Thùng, kg..." class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" required>
-                                        <div v-if="form.errors[`items.${index}.unit`]" class="text-red-500 text-xs mt-1">{{ form.errors[`items.${index}.unit`] }}</div>
-                                    </div>
-
-                                    <!-- Remove Button -->
-                                    <div class="flex-shrink-0">
-                                        <button type="button" @click="removeItem(index)" :disabled="form.items.length <= 1" class="text-red-500 hover:text-red-700 p-2 rounded-lg hover:bg-red-50 transition disabled:opacity-30 disabled:cursor-not-allowed font-bold" title="Xóa">
-                                            ✕
-                                        </button>
-                                    </div>
-                                    
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <!-- Cột Đồ Khô -->
+                            <div class="space-y-4">
+                                <div class="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                                    <h3 class="font-bold text-emerald-800 text-sm flex items-center gap-2">
+                                        <span>📦</span> Đồ khô / Nhu yếu phẩm (Mốc 1)
+                                    </h3>
+                                    <p class="text-xs text-emerald-600 mt-1">Nhận trước hạn chót Mốc 1</p>
                                 </div>
+                                
+                                <template v-for="(item, index) in form.items" :key="index">
+                                    <div v-if="item.item_type === 'dry'" class="p-4 bg-white border border-gray-200 shadow-sm rounded-xl relative group transition-all hover:border-emerald-300">
+                                        <div class="flex flex-col gap-3">
+                                            <div class="flex justify-between items-center">
+                                                <button type="button" @click="item.item_type = 'fresh'" class="text-[10px] bg-gray-100 hover:bg-amber-100 text-gray-600 font-semibold px-2 py-1 rounded transition">
+                                                    Chuyển qua Đồ tươi ➔
+                                                </button>
+                                                <button type="button" @click="removeItem(index)" class="text-red-400 hover:text-red-600 text-sm font-bold" title="Xóa">✕</button>
+                                            </div>
+                                            
+                                            <div>
+                                                <input v-model="item.item_name" type="text" class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" placeholder="VD: Gạo tẻ ST25..." required>
+                                                <div v-if="form.errors[`items.${index}.item_name`]" class="text-red-500 text-xs mt-1">{{ form.errors[`items.${index}.item_name`] }}</div>
+                                            </div>
+
+                                            <div class="flex gap-2">
+                                                <div class="w-1/2">
+                                                    <input v-model="item.target_quantity" type="number" min="1" class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" placeholder="Số lượng" required>
+                                                </div>
+                                                <div class="w-1/2">
+                                                    <input v-model="item.unit" type="text" class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" placeholder="Đơn vị" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                                
+                                <button type="button" @click="addItem('dry')" class="w-full text-sm border-2 border-dashed border-gray-300 text-gray-500 hover:text-emerald-600 hover:border-emerald-400 hover:bg-emerald-50 font-semibold py-2 rounded-xl transition">
+                                    + Thêm đồ khô
+                                </button>
+                            </div>
+
+                            <!-- Cột Đồ Tươi -->
+                            <div class="space-y-4">
+                                <div class="bg-amber-50 p-3 rounded-lg border border-amber-100">
+                                    <h3 class="font-bold text-amber-800 text-sm flex items-center gap-2">
+                                        <span>🥬</span> Đồ tươi sống (Mốc 2)
+                                    </h3>
+                                    <p class="text-xs text-amber-600 mt-1">Chỉ nhận từ Mốc 1 đến Mốc 2</p>
+                                </div>
+                                
+                                <template v-for="(item, index) in form.items" :key="index">
+                                    <div v-if="item.item_type === 'fresh'" class="p-4 bg-white border border-gray-200 shadow-sm rounded-xl relative group transition-all hover:border-amber-300">
+                                        <div class="flex flex-col gap-3">
+                                            <div class="flex justify-between items-center">
+                                                <button type="button" @click="item.item_type = 'dry'" class="text-[10px] bg-gray-100 hover:bg-emerald-100 text-gray-600 font-semibold px-2 py-1 rounded transition">
+                                                    🡄 Chuyển qua Đồ khô
+                                                </button>
+                                                <button type="button" @click="removeItem(index)" class="text-red-400 hover:text-red-600 text-sm font-bold" title="Xóa">✕</button>
+                                            </div>
+                                            
+                                            <div>
+                                                <input v-model="item.item_name" type="text" class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" placeholder="VD: Suất cơm gà..." required>
+                                                <div v-if="form.errors[`items.${index}.item_name`]" class="text-red-500 text-xs mt-1">{{ form.errors[`items.${index}.item_name`] }}</div>
+                                            </div>
+
+                                            <div class="flex gap-2">
+                                                <div class="w-1/2">
+                                                    <input v-model="item.target_quantity" type="number" min="1" class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" placeholder="Số lượng" required>
+                                                </div>
+                                                <div class="w-1/2">
+                                                    <input v-model="item.unit" type="text" class="w-full rounded-lg border-gray-300 focus:border-emerald-500 focus:ring-emerald-500 shadow-sm text-sm" placeholder="Đơn vị" required>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                                
+                                <button type="button" @click="addItem('fresh')" class="w-full text-sm border-2 border-dashed border-gray-300 text-gray-500 hover:text-amber-600 hover:border-amber-400 hover:bg-amber-50 font-semibold py-2 rounded-xl transition">
+                                    + Thêm đồ tươi
+                                </button>
                             </div>
                         </div>
 

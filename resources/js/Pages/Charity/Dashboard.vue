@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
 import { Head, Link, usePage, router, useForm } from '@inertiajs/vue3';
 
@@ -22,6 +22,8 @@ const selectedRadius = ref(savedRadius ? parseInt(savedRadius) : 5); // Bán kí
 const nearbyPosts = ref([]);
 const savedSearchQuery = sessionStorage.getItem('sf_searchQuery');
 const searchQuery = ref(savedSearchQuery || '');
+const isRadiusDropdownOpen = ref(false);
+const radiusDropdownRef = ref(null);
 
 // ---- DONATION MODAL LOGIC ----
 const showDonationModal = ref(false);
@@ -51,6 +53,7 @@ const openDonationModal = (campaign) => {
     }).map((item, index) => {
         const pending = parseInt(item.pending_quantity || 0, 10);
         const remaining = item.target_quantity - (item.current_quantity + pending);
+        const isFreshLocked = item.item_type === 'fresh' && new Date() < new Date(campaign.web_deadline);
         return {
             campaign_item_id: item.id,
             item_name: item.item_name,
@@ -58,9 +61,12 @@ const openDonationModal = (campaign) => {
             current_quantity: item.current_quantity,
             pending_quantity: pending,
             remaining_quantity: remaining,
-            selected: index === 0, // Mặc định tick ô đầu tiên
             donation_quantity: 1,
-            unit: item.unit
+            unit: item.unit || '',
+            item_type: item.item_type || 'dry',
+            is_locked_fresh: isFreshLocked,
+            web_deadline: campaign.web_deadline, // Để hiển thị ngày trong UI
+            selected: index === 0 && !isFreshLocked // Chọn sẵn món đầu tiên nếu không bị khóa
         };
     });
     
@@ -93,6 +99,9 @@ const submitDonation = () => {
 
 watch(searchQuery, (newVal) => {
     sessionStorage.setItem('sf_searchQuery', newVal);
+    if (typeof updateMarkersOnMap === 'function') {
+        updateMarkersOnMap();
+    }
 });
 
 // Khai báo biến giữ các thực thể Leaflet Map
@@ -115,6 +124,18 @@ const fetchNearbyFood = async () => {
         if (result.success) {
             nearbyPosts.value = result.data;
             updateMarkersOnMap();
+
+            // Tự động chuyển tab nếu tìm kiếm
+            if (typeof searchQuery !== 'undefined' && searchQuery.value) {
+                const hasFood = nearbyPosts.value && nearbyPosts.value.length > 0;
+                const hasCampaign = filteredCampaigns.value && filteredCampaigns.value.length > 0;
+                
+                if (activeTab.value === 'food' && !hasFood && hasCampaign) {
+                    activeTab.value = 'campaign';
+                } else if (activeTab.value === 'campaign' && !hasCampaign && hasFood) {
+                    activeTab.value = 'food';
+                }
+            }
         }
     } catch (error) {
         console.error('Lỗi khi gọi API thức ăn lân cận:', error);
@@ -161,6 +182,18 @@ const getUserLocation = () => {
         fetchNearbyFood();
     }
 };
+
+const filteredCampaigns = computed(() => {
+    if (!props.dbActiveCampaigns) return [];
+    if (!searchQuery.value) return props.dbActiveCampaigns;
+    
+    const query = searchQuery.value.toLowerCase();
+    return props.dbActiveCampaigns.filter(campaign => {
+        const titleMatch = campaign.title?.toLowerCase().includes(query);
+        const orgMatch = campaign.user?.name?.toLowerCase().includes(query);
+        return titleMatch || orgMatch;
+    });
+});
 
 // Khởi tạo bản đồ Leaflet
 const initMap = () => {
@@ -239,8 +272,8 @@ const updateMarkersOnMap = () => {
         shadowSize: [41, 41]
     });
 
-    if (props.dbActiveCampaigns && props.dbActiveCampaigns.length > 0) {
-        props.dbActiveCampaigns.forEach(campaign => {
+    if (filteredCampaigns.value && filteredCampaigns.value.length > 0) {
+        filteredCampaigns.value.forEach(campaign => {
             if (campaign.latitude && campaign.longitude && campaign.status === 'active') {
                 L.marker([campaign.latitude, campaign.longitude], { icon: blueIcon })
                     .addTo(markersGroup)
@@ -455,6 +488,9 @@ const handleClickOutside = (event) => {
     if (notificationContainerRef.value && !notificationContainerRef.value.contains(event.target)) {
         isNotificationOpen.value = false;
     }
+    if (radiusDropdownRef.value && !radiusDropdownRef.value.contains(event.target)) {
+        isRadiusDropdownOpen.value = false;
+    }
 };
 
 const dismissNotification = (claimId, status) => {
@@ -489,7 +525,7 @@ const allNotifications = computed(() => {
                     id: claim.id,
                     type: 'incoming_pending',
                     title: 'Yêu cầu nhận mới',
-                    message: `👤 ${claim.user?.name} muốn nhận ${claim.quantity} ${claim.food_post?.unit} từ bài viết "${claim.food_post?.title}"`,
+                    message: `👤 ${claim.user?.name} muốn nhận ${claim.quantity} ${claim.food_post?.unit} từ bài viết "${claim.food_post?.title}"` + (claim.message ? `\n💬 Ghi chú: ${claim.message}` : ''),
                     claim: claim,
                     created_at: claim.created_at
                 });
@@ -631,6 +667,7 @@ const groupedMyDonations = computed(() => {
                 shipping_method: donation.shipping_method,
                 shipper_name: donation.shipper_name,
                 shipper_license_plate: donation.shipper_license_plate,
+                expires_at: donation.expires_at,
                 items: []
             };
         }
@@ -845,6 +882,7 @@ const handleCompleteClaim = (claimId) => {
 const selectedClaimPost = ref(null);
 const claimForm = ref({
     quantity: 1,
+    message: '',
     shipping_method: 'self_pickup',
     pickup_contact_name: '',
     pickup_contact_phone: '',
@@ -856,6 +894,7 @@ const openClaimModal = (post) => {
     selectedClaimPost.value = post;
     claimForm.value = {
         quantity: 1,
+        message: '',
         shipping_method: 'self_pickup',
         pickup_contact_name: '',
         pickup_contact_phone: '',
@@ -987,15 +1026,20 @@ const submitClaim = () => {
                                   ⭐ {{ item.claim.user.trust_score }}
                                 </span>
                             </div>
-                            🚚 <b>Cách nhận:</b>
-                            <span v-if="item.claim.shipping_method === 'self_pickup'" class="text-blue-600 font-semibold ml-1">Tự đến lấy</span>
-                            <span v-else-if="item.claim.shipping_method === 'relative_pickup'" class="text-indigo-600 font-semibold ml-1">Nhờ người thân lấy ({{ item.claim.pickup_contact_name }})</span>
-                            <span v-else-if="item.claim.shipping_method === 'delivery_service'" class="text-orange-600 font-semibold ml-1">Giao hàng ({{ item.claim.delivery_service_company }})</span>
+                            <div class="mb-1">
+                                🚚 <b>Cách nhận:</b>
+                                <span v-if="item.claim.shipping_method === 'self_pickup'" class="text-blue-600 font-semibold ml-1">Tự đến lấy</span>
+                                <span v-else-if="item.claim.shipping_method === 'relative_pickup'" class="text-indigo-600 font-semibold ml-1">Nhờ người thân lấy ({{ item.claim.pickup_contact_name }})</span>
+                                <span v-else-if="item.claim.shipping_method === 'delivery_service'" class="text-orange-600 font-semibold ml-1">Giao hàng ({{ item.claim.delivery_service_company }})</span>
+                            </div>
+                            <div v-if="item.claim?.message" class="pt-1.5 border-t border-gray-200 text-gray-600 italic">
+                                💬 <b>Ghi chú:</b> {{ item.claim.message }}
+                            </div>
                           </div>
                         </div>
                       </div>
                       <div class="flex justify-between items-center text-[10px] text-gray-400">
-                        <span>{{ new Date(item.created_at).toLocaleString('vi-VN') }}</span>
+                        <span>{{ new Date(item.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span>
                       </div>
                       <!-- Các nút thao tác -->
                       <div class="flex items-center gap-2 pt-1">
@@ -1097,7 +1141,12 @@ const submitClaim = () => {
         <!-- CỘT TRÁI (2/3): Khung tìm kiếm xanh + Nội dung chính phân Tab -->
         <div class="lg:col-span-2 space-y-6">
           <!-- KHUNG XANH: Tìm kiếm Thực phẩm Lân cận -->
-          <div class="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-8 text-white shadow-xl shadow-emerald-100 relative overflow-hidden flex flex-col justify-center h-auto lg:h-[350px]">
+          <div class="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-3xl p-8 text-white shadow-xl shadow-emerald-100 relative flex flex-col justify-center h-auto lg:h-[350px]">
+            <!-- Decorative background wrapper -->
+            <div class="absolute inset-0 overflow-hidden rounded-3xl pointer-events-none">
+              <div class="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
+              <div class="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/20 rounded-full blur-2xl"></div>
+            </div>
             <div class="relative z-10 max-w-2xl space-y-4">
               <span class="bg-emerald-500/30 text-emerald-100 text-xs font-semibold px-3 py-1 rounded-full uppercase tracking-wider">Định vị không gian GPS</span>
               <h1 class="text-3xl font-extrabold tracking-tight md:text-4xl">Tìm kiếm Thực phẩm Lân cận</h1>
@@ -1114,16 +1163,45 @@ const submitClaim = () => {
                     </span>
                   </div>
                   
-                  <!-- Chọn bán kính lọc kết nối với biến selectedRadius -->
-                  <select 
-                    v-model="selectedRadius"
-                    class="flex-shrink-0 bg-white text-gray-800 rounded-xl pl-4 pr-10 py-2.5 text-sm font-medium border-0 focus:ring-2 focus:ring-emerald-400 cursor-pointer shadow-sm"
-                  >
-                    <option :value="2">Bán kính: 2 km</option>
-                    <option :value="5">Bán kính: 5 km</option>
-                    <option :value="10">Bán kính: 10 km</option>
-                    <option :value="15">Bán kính: 15 km</option>
-                  </select>
+                  <!-- Chọn bán kính lọc kết nối với biến selectedRadius (Custom Dropdown) -->
+                  <div class="relative flex-shrink-0 w-44" ref="radiusDropdownRef">
+                    <button 
+                      @click="isRadiusDropdownOpen = !isRadiusDropdownOpen"
+                      class="w-full flex items-center justify-between bg-white/10 backdrop-blur-md border border-white/10 text-white rounded-xl pl-4 pr-3 py-2.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-emerald-400 shadow-sm transition-all duration-300 hover:bg-white/20"
+                    >
+                      <span>Bán kính: {{ selectedRadius }} km</span>
+                      <svg :class="isRadiusDropdownOpen ? 'rotate-180' : ''" class="w-4 h-4 text-white/70 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path>
+                      </svg>
+                    </button>
+
+                    <!-- Dropdown List -->
+                    <transition
+                      enter-active-class="transition duration-200 ease-out"
+                      enter-from-class="transform scale-95 opacity-0"
+                      enter-to-class="transform scale-100 opacity-100"
+                      leave-active-class="transition duration-75 ease-in"
+                      leave-from-class="transform scale-100 opacity-100"
+                      leave-to-class="transform scale-95 opacity-0"
+                    >
+                      <div 
+                        v-if="isRadiusDropdownOpen" 
+                        class="absolute top-full left-0 mt-2 w-full bg-white rounded-xl shadow-xl border border-gray-100 overflow-hidden z-50 origin-top"
+                      >
+                        <ul class="py-1">
+                          <li 
+                            v-for="val in [2, 5, 10, 15]" 
+                            :key="val"
+                            @click="selectedRadius = val; isRadiusDropdownOpen = false; fetchNearbyFood()"
+                            class="px-4 py-2.5 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 cursor-pointer transition-colors duration-150 flex items-center justify-between"
+                          >
+                            <span :class="{'font-bold text-emerald-600': selectedRadius === val}">Bán kính: {{ val }} km</span>
+                            <svg v-if="selectedRadius === val" class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                          </li>
+                        </ul>
+                      </div>
+                    </transition>
+                  </div>
                 </div>
 
                 <!-- Hàng 2: Ô TÌM KIẾM THEO TÊN / DANH MỤC THỰC PHẨM (Premium UI) -->
@@ -1141,7 +1219,7 @@ const submitClaim = () => {
                     v-model="searchQuery"
                     @keyup.enter="fetchNearbyFood"
                     class="w-full bg-white text-gray-900 rounded-2xl pl-12 pr-28 py-3.5 text-sm font-semibold border-0 focus:ring-4 focus:ring-emerald-400/50 shadow-lg placeholder-gray-400 transition-all duration-300"
-                    placeholder="Nhập tên thực phẩm hoặc danh mục..."
+                    placeholder="Nhập tên thực phẩm, chiến dịch hoặc mái ấm..."
                   />
                   
                   <!-- Nút bấm nhúng thẳng vào trong ô nhập -->
@@ -1154,9 +1232,6 @@ const submitClaim = () => {
                 </div>
               </div>
             </div>
-            <!-- Decorative background elements -->
-            <div class="absolute -right-10 -bottom-10 w-40 h-40 bg-white/10 rounded-full blur-2xl"></div>
-            <div class="absolute -left-10 -top-10 w-40 h-40 bg-emerald-500/20 rounded-full blur-2xl"></div>
           </div>
           <!-- Thanh Tabs chuyển đổi -->
           <div class="flex border border-gray-100 bg-white rounded-2xl p-1 shadow-sm">
@@ -1303,11 +1378,11 @@ const submitClaim = () => {
             </div>
 
             <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-              <div v-if="!dbActiveCampaigns || dbActiveCampaigns.length === 0" class="col-span-full bg-white border border-dashed border-gray-200 rounded-3xl p-10 text-center text-gray-400 text-sm">
-                Hiện tại chưa có chiến dịch quyên góp nào đang diễn ra.
+              <div v-if="!filteredCampaigns || filteredCampaigns.length === 0" class="col-span-full bg-white border border-dashed border-gray-200 rounded-3xl p-10 text-center text-gray-400 text-sm">
+                Hiện tại chưa có chiến dịch quyên góp nào đang diễn ra phù hợp với tìm kiếm của bạn.
               </div>
               <div 
-                v-for="campaign in dbActiveCampaigns" 
+                v-for="campaign in filteredCampaigns" 
                 :key="campaign.id" 
                 class="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm space-y-4 flex flex-col justify-between group hover:shadow-xl hover:-translate-y-1 transition-all duration-300"
               >
@@ -1340,9 +1415,15 @@ const submitClaim = () => {
 
                   <!-- Metadata Box (Date & Location) -->
                   <div class="bg-gray-50/80 p-3 rounded-xl border border-gray-100/80 space-y-2 text-[11px] text-gray-600">
-                     <div class="flex items-start gap-2">
-                       <span class="shrink-0 text-gray-400">📅</span>
-                       <span class="font-medium">Hạn chót: <span class="text-gray-900 font-bold">{{ new Date(campaign.end_date).toLocaleDateString('vi-VN') }}</span></span>
+                     <div class="flex flex-col gap-1.5 border-b border-gray-200/50 pb-2 mb-2">
+                         <div class="flex items-start gap-2">
+                           <span class="shrink-0 text-emerald-500">📦</span>
+                           <span class="font-medium">Mốc 1 (Đồ khô): <span class="text-gray-900 font-bold">{{ new Date(campaign.web_deadline).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span></span>
+                         </div>
+                         <div class="flex items-start gap-2">
+                           <span class="shrink-0 text-amber-500">🥬</span>
+                           <span class="font-medium">Mốc 2 (Sự kiện): <span class="text-gray-900 font-bold">{{ new Date(campaign.event_date).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span></span>
+                         </div>
                      </div>
                      <div class="flex items-start gap-2">
                        <span class="shrink-0 text-gray-400">📍</span>
@@ -1371,7 +1452,7 @@ const submitClaim = () => {
                       </div>
                     </div>
                   </div>
-                  <button v-if="campaign.status === 'active' && new Date(campaign.end_date) >= new Date(new Date().setHours(0,0,0,0))" @click="openDonationModal(campaign)" class="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs py-3 rounded-xl transition shadow-md hover:shadow-lg mt-3 flex items-center justify-center gap-2">
+                  <button v-if="campaign.status === 'active' && new Date(campaign.event_date) >= new Date(new Date().setHours(0,0,0,0))" @click="openDonationModal(campaign)" class="w-full bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs py-3 rounded-xl transition shadow-md hover:shadow-lg mt-3 flex items-center justify-center gap-2">
                     <span>❤️</span> Đóng góp ngay
                   </button>
                   <button v-else disabled class="w-full bg-gray-100 text-gray-500 border border-gray-200 cursor-not-allowed font-bold text-xs py-3 rounded-xl transition mt-3 flex items-center justify-center gap-2">
@@ -1431,6 +1512,10 @@ const submitClaim = () => {
                   <div class="flex justify-between text-[11px] text-gray-500">
                     <span>Số lượng yêu cầu:</span>
                     <span class="font-semibold text-gray-800">{{ claim.quantity }} {{ claim.food_post?.unit }}</span>
+                  </div>
+
+                  <div v-if="claim.message" class="bg-gray-100 p-2 rounded-lg text-gray-700 text-[11px] italic mt-1 border-l-2 border-emerald-400">
+                    💬 Lời nhắn: {{ claim.message }}
                   </div>
 
                   <div class="mt-2 pt-2 border-t border-gray-100/50 text-[11px] space-y-1 text-left">
@@ -1508,7 +1593,11 @@ const submitClaim = () => {
                     👤 Người xin: <span class="font-bold text-gray-900">{{ claim.user?.name }}</span> xin <span class="font-bold text-emerald-600">{{ claim.quantity }} {{ claim.food_post?.unit }}</span>
                   </p>
                   
-                  <div class="bg-gray-50 p-2 rounded-xl text-gray-600 text-[11px] space-y-0.5 text-left">
+                  <div v-if="claim.message" class="bg-blue-100/50 p-2 rounded-lg text-gray-700 text-[11px] italic mt-1 border-l-2 border-blue-400">
+                    💬 Ghi chú: {{ claim.message }}
+                  </div>
+                  
+                  <div class="bg-gray-50 p-2 rounded-xl text-gray-600 text-[11px] space-y-0.5 text-left mt-1.5">
                     <p>📞 <b>SĐT người xin:</b> <a :href="'tel:' + claim.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ claim.user?.phone || 'Chưa cập nhật' }}</a></p>
                     <p>📍 <b>Địa chỉ:</b> <span class="font-semibold text-gray-800">{{ claim.user?.address || 'Chưa cập nhật' }}</span></p>
                     
@@ -1569,6 +1658,11 @@ const submitClaim = () => {
                   <div class="flex justify-between items-center text-[11px]">
                     <span class="text-gray-500">Mã đơn:</span>
                     <span class="font-extrabold text-gray-900 bg-orange-100 px-1.5 py-0.5 rounded-md">{{ group.donation_code }}</span>
+                  </div>
+
+                  <div v-if="group.status === 'pending' && group.expires_at" class="bg-red-50 p-2 rounded-xl border border-red-100 text-[11px] text-red-700 font-medium flex items-start gap-1.5 mt-1 text-left">
+                    <span class="shrink-0 mt-0.5">⏱️</span>
+                    <span>Bạn cần giao hàng đến điểm tập kết trước <span class="font-bold">{{ new Date(group.expires_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span>. Quá hạn đơn sẽ bị hủy và trừ điểm uy tín.</span>
                   </div>
 
                   <div class="bg-white p-2 rounded-xl border border-gray-100 text-[11px] text-gray-600 mt-1 text-left">
@@ -1715,6 +1809,12 @@ const submitClaim = () => {
             </div>
           </div>
 
+          <!-- Ghi chú / Lời nhắn -->
+          <div class="mt-4">
+              <label class="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1.5 ml-1">Lời nhắn cho người chia sẻ</label>
+              <textarea v-model="claimForm.message" rows="2" placeholder="VD: Tổ chức chúng tôi xin nhận để nấu cơm từ thiện..." class="w-full bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 transition text-gray-800 resize-none"></textarea>
+          </div>
+
           <!-- Các ô nhập liệu mở rộng (hiển thị động theo phương thức) -->
           <div v-if="claimForm.shipping_method === 'relative_pickup'" class="grid grid-cols-2 gap-3 mt-2">
               <input type="text" v-model="claimForm.pickup_contact_name" placeholder="Tên người lấy hộ" class="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:border-emerald-500 transition text-gray-800">
@@ -1856,11 +1956,19 @@ const submitClaim = () => {
                              class="p-4 rounded-xl border transition-all duration-200"
                              :class="item.selected ? 'border-emerald-500 bg-emerald-50/30 shadow-sm' : 'border-gray-200 bg-gray-50/50 hover:bg-gray-50'">
                             
-                            <label class="flex items-start gap-3 cursor-pointer">
-                                <input type="checkbox" v-model="item.selected" class="mt-1 w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 transition">
+                            <label class="flex items-start gap-3" :class="item.is_locked_fresh ? 'cursor-not-allowed opacity-75' : 'cursor-pointer'">
+                                <input type="checkbox" :disabled="item.is_locked_fresh" v-model="item.selected" class="mt-1 w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
                                 <div class="flex-1">
-                                    <h4 class="font-bold text-gray-900 text-sm">{{ item.item_name }}</h4>
+                                    <h4 class="font-bold text-gray-900 text-sm flex items-center gap-2">
+                                        {{ item.item_name }}
+                                        <span v-if="item.item_type === 'fresh'" class="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">Đồ Tươi</span>
+                                        <span v-else class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Đồ Khô</span>
+                                    </h4>
                                     <p class="text-xs text-gray-500 mt-0.5">Tiến độ hiện tại: {{ item.current_quantity + item.pending_quantity }} / {{ item.target_quantity }} {{ item.unit || '' }} <span class="text-orange-600 font-medium">(Cần thêm {{ item.remaining_quantity }})</span></p>
+                                    <div v-if="item.is_locked_fresh" class="mt-1.5 text-[10.5px] text-red-600 font-semibold bg-red-50 p-2 rounded-lg border border-red-100 flex items-start gap-1.5">
+                                        <span class="shrink-0 mt-0.5 text-xs">🔒</span>
+                                        <span>Chỉ mở nhận quyên góp ở Mốc 2 (Giai đoạn tập kết đồ tươi) từ lúc {{ new Date(item.web_deadline).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span>
+                                    </div>
                                 </div>
                             </label>
 
@@ -1971,18 +2079,18 @@ const submitClaim = () => {
                  </div>
                  
                  <div class="flex items-start gap-3">
-                   <span class="shrink-0 text-gray-400 text-base">📅</span>
+                   <span class="shrink-0 text-gray-400 text-base">📦</span>
                    <div class="flex flex-col">
-                     <span class="font-medium text-gray-500">Hạn chót quyên góp</span>
-                     <span class="text-gray-900 font-bold mt-0.5">{{ new Date(selectedCampaignDetail.end_date).toLocaleDateString('vi-VN') }}</span>
+                     <span class="font-medium text-gray-500">Mốc 1 (Đóng đồ khô)</span>
+                     <span class="text-gray-900 font-bold mt-0.5">{{ new Date(selectedCampaignDetail.web_deadline).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span>
                    </div>
                  </div>
                  
-                 <div v-if="selectedCampaignDetail.execution_date" class="flex items-start gap-3">
+                 <div v-if="selectedCampaignDetail.event_date" class="flex items-start gap-3">
                    <span class="shrink-0 text-gray-400 text-base">🚀</span>
                    <div class="flex flex-col">
-                     <span class="font-medium text-gray-500">Ngày đi phát dự kiến</span>
-                     <span class="text-emerald-700 font-bold mt-0.5">{{ new Date(selectedCampaignDetail.execution_date).toLocaleDateString('vi-VN') }}</span>
+                     <span class="font-medium text-gray-500">Mốc 2 (Ngày đi phát)</span>
+                     <span class="text-emerald-700 font-bold mt-0.5">{{ new Date(selectedCampaignDetail.event_date).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span>
                    </div>
                  </div>
 

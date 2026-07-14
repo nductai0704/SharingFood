@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, watch, onUnmounted, computed, onMounted } from 'vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
@@ -18,7 +18,23 @@ const activeManageTab = ref('active'); // 'active' hoặc 'inactive'
 const currentTime = ref(new Date());
 let timeTicker = null;
 
+const isCategoryDropdownOpen = ref(false);
+const categoryDropdownRef = ref(null);
+
+const isEditCategoryDropdownOpen = ref(false);
+const editCategoryDropdownRef = ref(null);
+
+const handleClickOutsideCategory = (event) => {
+    if (categoryDropdownRef.value && !categoryDropdownRef.value.contains(event.target)) {
+        isCategoryDropdownOpen.value = false;
+    }
+    if (editCategoryDropdownRef.value && !editCategoryDropdownRef.value.contains(event.target)) {
+        isEditCategoryDropdownOpen.value = false;
+    }
+};
+
 onMounted(() => {
+    document.addEventListener('click', handleClickOutsideCategory);
     timeTicker = setInterval(() => {
         currentTime.value = new Date();
     }, 10000); // cập nhật mỗi 10 giây
@@ -98,6 +114,7 @@ watch(() => props.dbFoodPosts, (newPosts) => {
 }, { immediate: true });
 
 onUnmounted(() => {
+    document.removeEventListener('click', handleClickOutsideCategory);
     stopPolling();
     if (timeTicker) clearInterval(timeTicker);
 });
@@ -502,19 +519,48 @@ const handleSubmit = () => {
 
             <!-- Grid 2 cột -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <!-- 2. Danh mục thực phẩm -->
-              <div class="space-y-1.5">
+              <!-- 2. Danh mục thực phẩm (Custom Dropdown) -->
+              <div class="space-y-1.5 relative" ref="categoryDropdownRef">
                 <label class="text-xs font-semibold text-gray-700">Danh mục <span class="text-red-500">*</span></label>
-                <select 
-                  v-model="form.category_id"
-                  :class="form.errors.category_id ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
-                  class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
-                >
-                  <option value="" disabled>-- Chọn danh mục --</option>
-                  <option v-for="cat in categories" :key="cat.id" :value="cat.id">
-                    {{ cat.name }}
-                  </option>
-                </select>
+                <div class="relative">
+                  <button 
+                    type="button"
+                    @click="isCategoryDropdownOpen = !isCategoryDropdownOpen"
+                    :class="form.errors.category_id ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                    class="w-full flex items-center justify-between bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                  >
+                    <span :class="!form.category_id ? 'text-gray-500' : 'text-gray-900'">
+                      {{ form.category_id ? getCategoryName(form.category_id) : '-- Chọn danh mục --' }}
+                    </span>
+                    <svg :class="isCategoryDropdownOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </button>
+
+                  <transition
+                    enter-active-class="transition duration-200 ease-out"
+                    enter-from-class="transform scale-95 opacity-0"
+                    enter-to-class="transform scale-100 opacity-100"
+                    leave-active-class="transition duration-75 ease-in"
+                    leave-from-class="transform scale-100 opacity-100"
+                    leave-to-class="transform scale-95 opacity-0"
+                  >
+                    <div 
+                      v-if="isCategoryDropdownOpen" 
+                      class="absolute top-full left-0 mt-1 w-full bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50 origin-top max-h-48 overflow-y-auto custom-scrollbar"
+                    >
+                      <ul class="py-1">
+                        <li 
+                          v-for="cat in categories" 
+                          :key="cat.id"
+                          @click="form.category_id = cat.id; isCategoryDropdownOpen = false"
+                          class="px-4 py-2 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 cursor-pointer transition-colors duration-150 flex items-center justify-between"
+                        >
+                          <span :class="{'font-bold text-emerald-600': form.category_id === cat.id}">{{ cat.name }}</span>
+                          <svg v-if="form.category_id === cat.id" class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        </li>
+                      </ul>
+                    </div>
+                  </transition>
+                </div>
                 <p v-if="form.errors.category_id" class="text-red-500 text-[11px] font-semibold mt-1">{{ form.errors.category_id }}</p>
               </div>
 
@@ -644,19 +690,48 @@ const handleSubmit = () => {
 
             <!-- Grid 2 cột -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <!-- 2. Danh mục thực phẩm -->
-              <div class="space-y-1.5">
+              <!-- 2. Danh mục thực phẩm (Custom Dropdown) -->
+              <div class="space-y-1.5 relative" ref="editCategoryDropdownRef">
                 <label class="text-xs font-semibold text-gray-700">Danh mục <span class="text-red-500">*</span></label>
-                <select 
-                  v-model="editForm.category_id"
-                  :class="editForm.errors.category_id ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
-                  class="w-full bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
-                >
-                  <option value="" disabled>-- Chọn danh mục --</option>
-                  <option v-for="cat in categories" :key="cat.id" :value="cat.id">
-                    {{ cat.name }}
-                  </option>
-                </select>
+                <div class="relative">
+                  <button 
+                    type="button"
+                    @click="isEditCategoryDropdownOpen = !isEditCategoryDropdownOpen"
+                    :class="editForm.errors.category_id ? 'border-red-300 focus:ring-red-500' : 'border-gray-200 focus:ring-emerald-500'"
+                    class="w-full flex items-center justify-between bg-gray-50 border text-sm text-gray-900 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:border-transparent transition"
+                  >
+                    <span :class="!editForm.category_id ? 'text-gray-500' : 'text-gray-900'">
+                      {{ editForm.category_id ? getCategoryName(editForm.category_id) : '-- Chọn danh mục --' }}
+                    </span>
+                    <svg :class="isEditCategoryDropdownOpen ? 'rotate-180' : ''" class="w-4 h-4 text-gray-400 transition-transform duration-200" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                  </button>
+
+                  <transition
+                    enter-active-class="transition duration-200 ease-out"
+                    enter-from-class="transform scale-95 opacity-0"
+                    enter-to-class="transform scale-100 opacity-100"
+                    leave-active-class="transition duration-75 ease-in"
+                    leave-from-class="transform scale-100 opacity-100"
+                    leave-to-class="transform scale-95 opacity-0"
+                  >
+                    <div 
+                      v-if="isEditCategoryDropdownOpen" 
+                      class="absolute top-full left-0 mt-1 w-full bg-white rounded-xl shadow-lg border border-gray-100 overflow-hidden z-50 origin-top max-h-48 overflow-y-auto custom-scrollbar"
+                    >
+                      <ul class="py-1">
+                        <li 
+                          v-for="cat in categories" 
+                          :key="cat.id"
+                          @click="editForm.category_id = cat.id; isEditCategoryDropdownOpen = false"
+                          class="px-4 py-2 text-sm text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 cursor-pointer transition-colors duration-150 flex items-center justify-between"
+                        >
+                          <span :class="{'font-bold text-emerald-600': editForm.category_id === cat.id}">{{ cat.name }}</span>
+                          <svg v-if="editForm.category_id === cat.id" class="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                        </li>
+                      </ul>
+                    </div>
+                  </transition>
+                </div>
                 <p v-if="editForm.errors.category_id" class="text-red-500 text-[11px] font-semibold mt-1">{{ editForm.errors.category_id }}</p>
               </div>
 

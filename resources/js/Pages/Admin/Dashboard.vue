@@ -17,6 +17,45 @@ const props = defineProps({
 // State quản lý Tab đang hiển thị tích cực
 const activeTab = ref('overview'); 
 
+// State quản lý bộ lọc khoảng thời gian
+const filterPeriod = ref(new URLSearchParams(window.location.search).get('period') || '7days');
+const customStartDate = ref(new URLSearchParams(window.location.search).get('start_date') || '');
+const customEndDate = ref(new URLSearchParams(window.location.search).get('end_date') || '');
+const showFilterDropdown = ref(false);
+
+const periodLabels = {
+    'today': 'Hôm nay',
+    '7days': '7 ngày qua',
+    '30days': '30 ngày qua',
+    'all': 'Tất cả thời gian',
+    'custom': 'Tùy chỉnh khoảng thời gian...'
+};
+
+const selectPeriod = (val) => {
+    filterPeriod.value = val;
+    showFilterDropdown.value = false;
+    updateFilter();
+};
+
+// Cập nhật URL và lấy dữ liệu mới khi thay đổi bộ lọc
+const updateFilter = () => {
+    // Không tự động gửi nếu chọn custom mà chưa điền ngày
+    if (filterPeriod.value === 'custom' && (!customStartDate.value || !customEndDate.value)) {
+        return; 
+    }
+
+    let params = { period: filterPeriod.value };
+    if (filterPeriod.value === 'custom') {
+        params.start_date = customStartDate.value;
+        params.end_date = customEndDate.value;
+    }
+
+    router.get(route('admin.dashboard'), params, { 
+        preserveState: true, 
+        replace: true 
+    });
+};
+
 // State hiển thị Dropdown thông báo
 const showNotifications = ref(false);
 
@@ -85,10 +124,9 @@ const moderateCampaign = (campaignId, status) => {
 
 const getRoleLabel = (role) => {
     const labels = {
-        admin: 'admin',
+        admin: 'Admin',
         charity: 'Tổ chức từ thiện',
-        small_business: 'Doanh nghiệp nhỏ',
-        personal: 'Cá nhân',
+        personal: 'Cá nhân / Hộ kinh doanh',
     };
     return labels[role] || role;
 };
@@ -237,121 +275,246 @@ const getStatusLabel = (status) => {
             </div>
 
             <div v-if="activeTab === 'overview'" class="space-y-6 animate-fade-in">
+                
+                <!-- BỘ LỌC THỜI GIAN & XUẤT FILE -->
+                <div class="flex flex-col sm:flex-row justify-between items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-gray-200 mb-2">
+                    <div class="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Dữ liệu hiển thị:</span>
+                        
+                        <!-- CUSTOM DROPDOWN SELECT -->
+                        <div class="relative">
+                            <!-- Nút Trigger -->
+                            <button @click="showFilterDropdown = !showFilterDropdown" 
+                                    class="flex items-center justify-between w-full sm:w-auto bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl focus:ring-2 focus:ring-emerald-500 block py-2.5 pl-4 pr-3 min-w-[220px] outline-none transition-all duration-200 shadow-sm">
+                                <span>{{ periodLabels[filterPeriod] }}</span>
+                                <svg class="w-4 h-4 text-gray-500 transition-transform duration-200" :class="{ 'rotate-180': showFilterDropdown }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
+                            
+                            <!-- Menu Overlay đóng khi click ngoài -->
+                            <div v-if="showFilterDropdown" @click="showFilterDropdown = false" class="fixed inset-0 z-40"></div>
+                            
+                            <!-- Bảng Menu Dropdown -->
+                            <transition enter-active-class="transition ease-out duration-100" enter-from-class="transform opacity-0 scale-95" enter-to-class="transform opacity-100 scale-100" leave-active-class="transition ease-in duration-75" leave-from-class="transform opacity-100 scale-100" leave-to-class="transform opacity-0 scale-95">
+                                <div v-if="showFilterDropdown" class="absolute z-50 mt-2 w-[220px] rounded-xl bg-white shadow-xl border border-gray-100 py-1 origin-top-left">
+                                    <button @click="selectPeriod('today')" :class="{'bg-emerald-50 text-emerald-700': filterPeriod === 'today'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition">Hôm nay</button>
+                                    <button @click="selectPeriod('7days')" :class="{'bg-emerald-50 text-emerald-700': filterPeriod === '7days'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition">7 ngày qua</button>
+                                    <button @click="selectPeriod('30days')" :class="{'bg-emerald-50 text-emerald-700': filterPeriod === '30days'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition">30 ngày qua</button>
+                                    <button @click="selectPeriod('all')" :class="{'bg-emerald-50 text-emerald-700': filterPeriod === 'all'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition">Tất cả thời gian</button>
+                                    <div class="border-t border-gray-100 my-1"></div>
+                                    <button @click="selectPeriod('custom')" :class="{'bg-emerald-50 text-emerald-700': filterPeriod === 'custom'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition">Tùy chỉnh khoảng thời gian...</button>
+                                </div>
+                            </transition>
+                        </div>
+                        
+                        <!-- Khung chọn ngày tùy chỉnh (Hiện khi chọn Tùy chỉnh) -->
+                        <div v-if="filterPeriod === 'custom'" class="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200 animate-fade-in shadow-sm">
+                            <input type="date" v-model="customStartDate" class="bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-md focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none" />
+                            <span class="text-xs text-gray-400 font-medium">-</span>
+                            <input type="date" v-model="customEndDate" class="bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-md focus:ring-emerald-500 focus:border-emerald-500 p-1.5 outline-none" />
+                            <button @click="updateFilter" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-md text-xs font-bold transition shadow-sm ml-1">Áp dụng</button>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-2 w-full sm:w-auto">
+                        <a :href="route('admin.export.pdf', { period: filterPeriod, start_date: filterPeriod === 'custom' ? customStartDate : null, end_date: filterPeriod === 'custom' ? customEndDate : null })" target="_blank" class="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border border-gray-200 hover:bg-red-50 hover:border-red-200 hover:text-red-700 text-gray-600 px-4 py-2 rounded-lg text-xs font-bold transition">
+                            <svg class="w-4 h-4 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M8.25 10.875a1.406 1.406 0 011.406-1.406h2.25c.775 0 1.406.63 1.406 1.406v2.25c0 .775-.63 1.406-1.406 1.406h-2.25a1.406 1.406 0 01-1.406-1.406v-2.25zM12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zM9.656 7.969h2.25a2.906 2.906 0 012.906 2.906v2.25a2.906 2.906 0 01-2.906 2.906h-2.25a2.906 2.906 0 01-2.906-2.906v-2.25a2.906 2.906 0 012.906-2.906z"></path></svg>
+                            Xuất PDF
+                        </a>
+                        <a :href="route('admin.export.excel', { period: filterPeriod, start_date: filterPeriod === 'custom' ? customStartDate : null, end_date: filterPeriod === 'custom' ? customEndDate : null })" target="_blank" class="flex-1 sm:flex-none flex items-center justify-center gap-2 bg-white border border-gray-200 hover:bg-emerald-50 hover:border-emerald-200 hover:text-emerald-700 text-gray-600 px-4 py-2 rounded-lg text-xs font-bold transition">
+                            <svg class="w-4 h-4 text-emerald-600" fill="currentColor" viewBox="0 0 24 24"><path d="M19 3H5c-1.103 0-2 .897-2 2v14c0 1.103.897 2 2 2h14c1.103 0 2-.897 2-2V5c0-1.103-.897-2-2-2zM9.555 17h-2.11l1.89-4.882L7.545 7h2.11l1.315 3.52c.22.587.394 1.146.52 1.677h.04c.127-.531.32-1.108.58-1.73l1.435-3.467h1.99l-2.07 5.093L15.42 17h-2.09l-1.52-3.84c-.2-.514-.367-1.026-.5-1.536h-.04c-.113.486-.273.993-.48 1.523L9.555 17z"></path></svg>
+                            Xuất Excel
+                        </a>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Tổng người dùng</span>
-                        <div class="flex items-baseline mt-4 space-x-2">
-                            <span class="text-3xl font-bold text-gray-950">{{ stats?.total_users ?? 0 }}</span>
-                            <span class="text-xs text-emerald-600 font-semibold">Tài khoản</span>
+                    <!-- Box 1: Tổng người dùng -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tổng người dùng</span>
+                            <div class="p-2 bg-gray-50 rounded-lg">
+                                <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <span class="text-3xl font-bold text-gray-900">{{ stats?.total_users ?? 0 }}</span>
                         </div>
                     </div>
                     
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between relative group">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Thực phẩm lẻ</span>
-                        <div class="flex flex-col mt-4">
-                            <div class="flex items-baseline space-x-2">
-                                <span class="text-3xl font-bold text-emerald-600">{{ stats?.claims_breakdown?.total ?? 0 }}</span>
-                                <span class="text-xs text-emerald-600 font-semibold">yêu cầu</span>
+                    <!-- Box 2: Giao dịch lẻ -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Yêu cầu nhận</span>
+                            <div class="p-2 bg-emerald-50 rounded-lg">
+                                <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                             </div>
-                            <div class="mt-3 grid grid-cols-3 gap-1 text-[10px] font-medium text-gray-500">
-                                <div class="flex flex-col items-center p-1 bg-gray-50 rounded">
-                                    <span class="text-emerald-600 font-bold">{{ stats?.claims_breakdown?.completed_count ?? 0 }}</span>
-                                    <span>Đã lấy</span>
-                                </div>
-                                <div class="flex flex-col items-center p-1 bg-gray-50 rounded">
-                                    <span class="text-amber-500 font-bold">{{ stats?.claims_breakdown?.pending_count ?? 0 }}</span>
-                                    <span>Chờ lấy</span>
-                                </div>
-                                <div class="flex flex-col items-center p-1 bg-gray-50 rounded">
-                                    <span class="text-red-500 font-bold">{{ stats?.claims_breakdown?.cancelled_count ?? 0 }}</span>
-                                    <span>Đã hủy</span>
-                                </div>
-                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <span class="text-3xl font-bold text-gray-900">{{ stats?.claims_breakdown?.total ?? 0 }}</span>
+                        </div>
+                        <div class="grid grid-cols-3 gap-2 mt-3 text-[10px] text-gray-500">
+                            <div><span class="block text-emerald-600 font-semibold">{{ stats?.claims_breakdown?.completed_count ?? 0 }}</span> Hoàn tất</div>
+                            <div><span class="block text-amber-500 font-semibold">{{ stats?.claims_breakdown?.pending_count ?? 0 }}</span> Chờ xử lý</div>
+                            <div><span class="block text-gray-400 font-semibold">{{ stats?.claims_breakdown?.cancelled_count ?? 0 }}</span> Đã hủy</div>
                         </div>
                     </div>
 
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Chiến dịch quyên góp</span>
-                        <div class="flex flex-col mt-4">
-                            <div class="flex items-baseline space-x-2">
-                                <span class="text-3xl font-bold text-amber-600">{{ stats?.donations_breakdown?.total_donations ?? 0 }}</span>
-                                <span class="text-xs text-amber-600 font-semibold">lượt góp</span>
+                    <!-- Box 3: Chiến dịch -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Quyên góp CD</span>
+                            <div class="p-2 bg-amber-50 rounded-lg">
+                                <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"></path></svg>
                             </div>
-                            <div class="mt-3 grid grid-cols-2 gap-2 text-[10px] font-medium text-gray-500">
-                                <div class="flex flex-col p-1.5 bg-gray-50 rounded">
-                                    <span class="text-emerald-600 font-bold">{{ stats?.donations_breakdown?.completed_quantity ?? 0 }} đv</span>
-                                    <span>Đã nhận thực tế</span>
-                                </div>
-                                <div class="flex flex-col p-1.5 bg-gray-50 rounded">
-                                    <span class="text-amber-500 font-bold">{{ stats?.donations_breakdown?.pending_quantity ?? 0 }} đv</span>
-                                    <span>Đang vận chuyển</span>
-                                </div>
-                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <span class="text-3xl font-bold text-gray-900">{{ stats?.donations_breakdown?.total_donations ?? 0 }}</span>
+                        </div>
+                        <div class="grid grid-cols-2 gap-2 mt-3 text-[10px] text-gray-500">
+                            <div><span class="block text-emerald-600 font-semibold">{{ stats?.donations_breakdown?.completed_quantity ?? 0 }} đv</span> Thực nhận</div>
+                            <div><span class="block text-amber-500 font-semibold">{{ stats?.donations_breakdown?.pending_quantity ?? 0 }} đv</span> Chờ vận chuyển</div>
                         </div>
                     </div>
                     
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Sản lượng giải cứu</span>
-                        <div class="flex items-baseline mt-4 space-x-2">
-                            <span class="text-3xl font-bold text-purple-600">{{ stats?.rescued_volume ?? 0 }}</span>
-                            <span class="text-xs text-purple-600 font-medium">Đơn vị</span>
+                    <!-- Box 4: Sản lượng giải cứu -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Lượng giải cứu</span>
+                            <div class="p-2 bg-blue-50 rounded-lg">
+                                <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            </div>
                         </div>
-                        <p class="text-[10px] text-gray-400 mt-2">Tổng tích lũy thực tế</p>
+                        <div class="mt-4">
+                            <span class="text-3xl font-bold text-gray-900">{{ stats?.rescued_volume ?? 0 }}</span>
+                        </div>
+                        <div class="mt-3 text-[10px] text-gray-400">
+                            Đơn vị thực phẩm tích lũy
+                        </div>
                     </div>
 
-                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col justify-between">
-                        <span class="text-xs font-bold text-gray-400 uppercase tracking-wider">Tỷ lệ thành công</span>
-                        <div class="flex items-baseline mt-4 space-x-2">
-                            <span class="text-3xl font-bold text-blue-600">{{ stats?.success_rate ?? '0%' }}</span>
-                            <span class="text-xs text-blue-500 font-medium">Hoàn thành</span>
+                    <!-- Box 5: Tỷ lệ thành công -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Tỷ lệ thành công</span>
+                            <div class="p-2 bg-purple-50 rounded-lg">
+                                <svg class="w-4 h-4 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path></svg>
+                            </div>
                         </div>
-                        <p class="text-[10px] text-gray-400 mt-2">Dựa trên đơn lẻ</p>
+                        <div class="mt-4">
+                            <span class="text-3xl font-bold text-gray-900">{{ stats?.success_rate ?? '0%' }}</span>
+                        </div>
+                        <div class="mt-3">
+                            <div class="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+                                <div class="bg-gray-800 h-full rounded-full transition-all duration-1000" :style="`width: ${stats?.success_rate ?? '0%'}`"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Biểu đồ -->
                 <AdminCharts :chart-data="chartData" />
 
-                <!-- Bảng Nhật ký hoạt động gần đây -->
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden mt-8">
-                    <div class="p-6 border-b border-gray-100">
-                        <h3 class="text-base font-bold text-gray-950">📋 Nhật ký hoạt động gần đây</h3>
-                        <p class="text-xs text-gray-500 mt-1">Danh sách các thao tác và sự kiện mới nhất trên hệ thống.</p>
+                <!-- Nửa dưới: Bảng nhật ký & Khối cảnh báo -->
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
+                    
+                    <!-- Bảng Nhật ký hoạt động gần đây (Chiếm 2 phần) -->
+                    <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+                        <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+                            <div>
+                                <h3 class="text-sm font-bold text-gray-900">📋 Nhật ký hoạt động gần đây</h3>
+                                <p class="text-[10px] text-gray-500 mt-1">Danh sách các thao tác và sự kiện mới nhất trên hệ thống.</p>
+                            </div>
+                            <button @click="activeTab = 'logs'" class="text-xs text-gray-600 hover:text-emerald-700 font-semibold bg-white hover:bg-emerald-50 px-3 py-1.5 rounded-lg border border-gray-200 hover:border-emerald-200 transition shadow-sm">Xem tất cả</button>
+                        </div>
+                        <div class="overflow-x-auto flex-1">
+                            <table class="w-full text-left text-sm h-full">
+                                <thead class="bg-gray-50/80 text-gray-500 text-[10px] font-bold uppercase tracking-wider border-b border-gray-100">
+                                    <tr>
+                                        <th class="px-5 py-3">Thời gian</th>
+                                        <th class="px-5 py-3">Loại sự kiện</th>
+                                        <th class="px-5 py-3">Chi tiết</th>
+                                        <th class="px-5 py-3">Thực hiện bởi</th>
+                                        <th class="px-5 py-3 text-center">Trạng thái</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-50">
+                                    <tr v-for="log in recentActivities" :key="log.id" class="hover:bg-gray-50/50 transition">
+                                        <td class="px-5 py-3 whitespace-nowrap text-xs text-gray-500">
+                                            {{ log.time }}
+                                        </td>
+                                        <td class="px-5 py-3 whitespace-nowrap">
+                                            <span class="bg-gray-100 text-gray-700 px-2 py-1 rounded text-[10px] font-bold tracking-wider border border-gray-200">
+                                                {{ log.type }}
+                                            </span>
+                                        </td>
+                                        <td class="px-5 py-3 text-xs text-gray-800">
+                                            <div class="line-clamp-2 max-w-[250px]" :title="log.details">{{ log.details }}</div>
+                                        </td>
+                                        <td class="px-5 py-3 whitespace-nowrap text-xs font-semibold text-gray-700">
+                                            {{ log.status }}
+                                        </td>
+                                        <td class="px-5 py-3 whitespace-nowrap text-center">
+                                            <span v-if="log.type.includes('VERIFICATION') || log.type.includes('MODERATION')" class="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wider border border-emerald-200">COMPLETED</span>
+                                            <span v-else-if="log.type.includes('BAN')" class="bg-red-50 text-red-700 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wider border border-red-200">RESTRICTED</span>
+                                            <span v-else class="bg-blue-50 text-blue-700 px-2.5 py-1 rounded-md text-[9px] font-bold tracking-wider border border-blue-200">AUTO-LOG</span>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="!recentActivities || recentActivities.length === 0">
+                                        <td colspan="5" class="px-6 py-8 text-center text-gray-400 text-xs">
+                                            Chưa có hoạt động nào gần đây.
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                    <div class="overflow-x-auto">
-                        <table class="w-full text-left text-sm">
-                            <thead class="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
-                                <tr>
-                                    <th class="px-6 py-4">Thời gian</th>
-                                    <th class="px-6 py-4">Loại hoạt động</th>
-                                    <th class="px-6 py-4">Chi tiết hoạt động</th>
-                                    <th class="px-6 py-4">Thực hiện bởi</th>
-                                </tr>
-                            </thead>
-                            <tbody class="divide-y divide-gray-50">
-                                <tr v-for="log in recentActivities" :key="log.id" class="hover:bg-gray-50/50 transition">
-                                    <td class="px-6 py-4 whitespace-nowrap text-xs text-gray-500">
-                                        {{ log.time }}
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <span class="bg-gray-100 text-gray-700 px-2 py-1 rounded text-[10px] font-bold tracking-wider">
-                                            {{ log.type }}
-                                        </span>
-                                    </td>
-                                    <td class="px-6 py-4 text-xs text-gray-700">
-                                        {{ log.details }}
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-xs font-medium text-gray-900">
-                                        {{ log.status }}
-                                    </td>
-                                </tr>
-                                <tr v-if="!recentActivities || recentActivities.length === 0">
-                                    <td colspan="4" class="px-6 py-8 text-center text-gray-400 text-xs">
-                                        Chưa có hoạt động nào gần đây.
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
+
+                    <!-- Khối cảnh báo cần xử lý (Chiếm 1 phần) -->
+                    <div class="lg:col-span-1 space-y-5">
+                        <h3 class="text-sm font-bold text-gray-900 mb-2 border-b border-gray-200 pb-2">⚡ Cần xử lý gấp</h3>
+                        
+                        <!-- Cảnh báo 1: Bài viết chờ duyệt -->
+                        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
+                            <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition duration-300">
+                                <svg class="w-16 h-16 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            <div class="relative z-10">
+                                <div class="flex justify-between items-start">
+                                    <div class="bg-amber-100 p-2.5 rounded-xl border border-amber-200 shadow-inner">
+                                        <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    </div>
+                                    <span class="bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">{{ pendingCampaigns?.length ?? 0 }} Mới</span>
+                                </div>
+                                <div class="mt-4">
+                                    <h4 class="text-sm font-bold text-gray-900">Chiến dịch chờ duyệt</h4>
+                                    <p class="text-[11px] text-gray-600 mt-1 leading-relaxed">Có các chiến dịch quyên góp lớn cần BQT kiểm tra và xác thực tính hợp pháp.</p>
+                                </div>
+                                <button @click="activeTab = 'moderation'" class="mt-4 w-full bg-white border border-amber-200 hover:bg-amber-600 hover:text-white text-amber-700 text-xs font-bold py-2.5 rounded-xl transition shadow-sm">
+                                    Đến trang Kiểm duyệt
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Cảnh báo 2: Tài khoản uy tín thấp -->
+                        <div class="bg-red-50 border border-red-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
+                            <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition duration-300">
+                                <svg class="w-16 h-16 text-red-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            <div class="relative z-10">
+                                <div class="flex justify-between items-start">
+                                    <div class="bg-red-100 p-2.5 rounded-xl border border-red-200 shadow-inner">
+                                        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                                    </div>
+                                    <span class="bg-red-100 border border-red-200 text-red-800 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">{{ users?.filter(u => u.trust_score < 40).length ?? 0 }} Vi phạm</span>
+                                </div>
+                                <div class="mt-4">
+                                    <h4 class="text-sm font-bold text-gray-900">Tài khoản uy tín kém (< 40)</h4>
+                                    <p class="text-[11px] text-gray-600 mt-1 leading-relaxed">Phát hiện người dùng có dấu hiệu spam, bom hàng. Cần xem xét khóa tài khoản ngay lập tức.</p>
+                                </div>
+                                <button @click="activeTab = 'users'" class="mt-4 w-full bg-white border border-red-200 hover:bg-red-600 hover:text-white text-red-700 text-xs font-bold py-2.5 rounded-xl transition shadow-sm">
+                                    Xem danh sách vi phạm
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -382,8 +545,7 @@ const getStatusLabel = (status) => {
                                 <td class="px-6 py-4">
                                     <span :class="{
                                         'bg-purple-50 text-purple-700': user.role === 'charity',
-                                        'bg-blue-50 text-blue-700': user.role === 'small_business',
-                                        'bg-gray-100 text-gray-700': user.role === 'personal',
+                                        'bg-blue-50 text-blue-700': user.role === 'personal',
                                         'bg-red-50 text-red-700': user.role === 'admin'
                                     }" class="text-xs font-bold px-2.5 py-1 rounded-md">
                                         {{ getRoleLabel(user.role) }}
@@ -500,7 +662,7 @@ const getStatusLabel = (status) => {
                         <tbody class="divide-y divide-gray-100">
                             <tr v-for="log in systemLogs" :key="log.id" class="hover:bg-gray-50/70 transition">
                                 <td class="px-6 py-4 text-xs font-medium text-gray-500 whitespace-nowrap">
-                                    {{ new Date(log.created_at).toLocaleString('vi-VN') }}
+                                    {{ new Date(log.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}
                                 </td>
                                 <td class="px-6 py-4">
                                     <span :class="{
@@ -602,12 +764,12 @@ const getStatusLabel = (status) => {
                                 <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.created_at).toLocaleDateString('vi-VN') }}</span>
                             </div>
                             <div>
-                                <span class="text-gray-500 font-semibold text-xs block mb-1">🏁 Ngày đóng cổng</span>
-                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.end_date).toLocaleDateString('vi-VN') }}</span>
+                                <span class="text-gray-500 font-semibold text-xs block mb-1">📦 Mốc 1 (Đóng đồ khô)</span>
+                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.web_deadline).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span>
                             </div>
-                            <div v-if="selectedCampaign.execution_date">
-                                <span class="text-gray-500 font-semibold text-xs block mb-1">🚀 Ngày đi phát</span>
-                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.execution_date).toLocaleDateString('vi-VN') }}</span>
+                            <div v-if="selectedCampaign.event_date">
+                                <span class="text-gray-500 font-semibold text-xs block mb-1">🚀 Mốc 2 (Ngày đi phát)</span>
+                                <span class="text-gray-900 font-medium">{{ new Date(selectedCampaign.event_date).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span>
                             </div>
                             <div class="col-span-2">
                                 <span class="text-gray-500 font-semibold text-xs block mb-1">📍 Địa điểm nhận quyên góp</span>
@@ -619,7 +781,11 @@ const getStatusLabel = (status) => {
                             <h5 class="text-sm font-bold text-gray-900 mb-3 border-b pb-2">📦 Nhu yếu phẩm kêu gọi</h5>
                             <ul class="space-y-3">
                                 <li v-for="item in selectedCampaign.items" :key="item.id" class="flex justify-between items-center bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                    <span class="text-sm font-semibold text-gray-800">{{ item.item_name }}</span>
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm font-semibold text-gray-800">{{ item.item_name }}</span>
+                                        <span v-if="item.item_type === 'fresh'" class="text-[9px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">Đồ Tươi</span>
+                                        <span v-else class="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold">Đồ Khô</span>
+                                    </div>
                                     <span class="text-xs font-bold bg-white border border-gray-200 px-2.5 py-1 rounded-md text-emerald-600">
                                         Thực nhận: {{ item.current_quantity }} / {{ item.target_quantity }} {{ item.unit }}
                                     </span>

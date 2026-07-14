@@ -48,10 +48,10 @@ class CheckExpiredTransactions extends Command
         }
 
         // 2. Campaign Donations (Đóng góp chiến dịch)
-        // Nếu chiến dịch đã đóng (end_date < now) mà đơn quyên góp vẫn pending -> Tự động hủy
+        // Nếu chiến dịch đã đóng (event_date < now) mà đơn quyên góp vẫn pending -> Tự động hủy
         $expiredDonations = \App\Models\CampaignDonation::where('status', 'pending')
             ->whereHas('campaign', function ($q) {
-                $q->where('end_date', '<', now());
+                $q->where('event_date', '<', now());
             })
             ->get();
 

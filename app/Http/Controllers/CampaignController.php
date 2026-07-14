@@ -45,23 +45,32 @@ class CampaignController extends Controller
             'location_details' => 'required|string',
             'latitude' => 'nullable|numeric',
             'longitude' => 'nullable|numeric',
-            'end_date' => 'required|date|after:today',
-            'execution_date' => 'required|date|after_or_equal:end_date',
+            'web_deadline' => 'required|date|after:today',
+            'event_date' => 'required|date|after_or_equal:web_deadline',
             
             // Validate mảng vật phẩm
             'items' => 'required|array|min:1',
+            'items.*.item_type' => 'required|in:dry,fresh',
             'items.*.item_name' => 'required|string|max:100',
             'items.*.target_quantity' => 'required|integer|min:1',
             'items.*.unit' => 'required|string|max:50',
         ], [
-            'end_date.after' => 'Ngày đóng cổng quyên góp phải sau ngày hôm nay.',
-            'execution_date.after_or_equal' => 'Ngày đi phát phải bằng hoặc sau ngày đóng cổng.',
+            'web_deadline.after' => 'Ngày đóng cổng Mốc 1 phải sau ngày hôm nay.',
+            'event_date.after_or_equal' => 'Mốc 2 phải bằng hoặc sau Mốc 1.',
             'items.required' => 'Bạn phải thêm ít nhất một vật phẩm kêu gọi.',
             'items.min' => 'Bạn phải thêm ít nhất một vật phẩm kêu gọi.',
+            'items.*.item_type.required' => 'Loại thực phẩm không được để trống.',
             'items.*.item_name.required' => 'Tên vật phẩm không được để trống.',
             'items.*.target_quantity.min' => 'Số lượng mục tiêu phải lớn hơn hoặc bằng 1.',
             'items.*.unit.required' => 'Đơn vị không được để trống.',
         ]);
+
+        // Kiểm tra khoảng đệm 36 giờ
+        $webDeadline = \Carbon\Carbon::parse($validated['web_deadline']);
+        $eventDate = \Carbon\Carbon::parse($validated['event_date']);
+        if ($webDeadline->diffInHours($eventDate) > 36) {
+            return back()->withErrors(['event_date' => 'Khoảng thời gian đệm Mốc 2 không được quá 36 giờ để đảm bảo thực phẩm tươi không bị hỏng.'])->withInput();
+        }
 
         try {
             DB::beginTransaction();
@@ -75,8 +84,8 @@ class CampaignController extends Controller
                 'location_details' => $validated['location_details'],
                 'latitude' => $validated['latitude'] ?? null,
                 'longitude' => $validated['longitude'] ?? null,
-                'end_date' => $validated['end_date'],
-                'execution_date' => $validated['execution_date'],
+                'web_deadline' => $validated['web_deadline'],
+                'event_date' => $validated['event_date'],
             ]);
 
             // 4. Lưu danh sách vật phẩm và phân loại tự động
@@ -94,6 +103,7 @@ class CampaignController extends Controller
                 $itemsData[] = [
                     'campaign_id' => $campaign->id,
                     'category_id' => $assignedCategoryId,
+                    'item_type' => $item['item_type'],
                     'item_name' => $item['item_name'],
                     'target_quantity' => $item['target_quantity'],
                     'unit' => $item['unit'],
@@ -148,22 +158,29 @@ class CampaignController extends Controller
             'location_details' => 'required|string',
             'latitude' => 'nullable|numeric',
             'longitude' => 'nullable|numeric',
-            'end_date' => 'required|date',
-            'execution_date' => 'required|date|after_or_equal:end_date',
+            'web_deadline' => 'required|date',
+            'event_date' => 'required|date|after_or_equal:web_deadline',
             'items' => 'required|array|min:1',
             'items.*.id' => 'nullable|exists:campaign_items,id',
+            'items.*.item_type' => 'required|in:dry,fresh',
             'items.*.item_name' => 'required|string|max:100',
             'items.*.target_quantity' => 'required|integer|min:1',
             'items.*.unit' => 'required|string|max:50',
         ], [
-            'end_date.after' => 'Ngày đóng cổng quyên góp phải sau ngày hôm nay.',
-            'execution_date.after_or_equal' => 'Ngày đi phát phải bằng hoặc sau ngày đóng cổng.',
+            'event_date.after_or_equal' => 'Mốc 2 phải bằng hoặc sau Mốc 1.',
             'items.required' => 'Bạn phải thêm ít nhất một vật phẩm kêu gọi.',
             'items.min' => 'Bạn phải thêm ít nhất một vật phẩm kêu gọi.',
+            'items.*.item_type.required' => 'Loại thực phẩm không được để trống.',
             'items.*.item_name.required' => 'Tên vật phẩm không được để trống.',
             'items.*.target_quantity.min' => 'Số lượng mục tiêu phải lớn hơn hoặc bằng 1.',
             'items.*.unit.required' => 'Đơn vị không được để trống.',
         ]);
+
+        $webDeadline = \Carbon\Carbon::parse($validated['web_deadline']);
+        $eventDate = \Carbon\Carbon::parse($validated['event_date']);
+        if ($webDeadline->diffInHours($eventDate) > 36) {
+            return back()->withErrors(['event_date' => 'Khoảng thời gian đệm Mốc 2 không được quá 36 giờ để đảm bảo thực phẩm tươi không bị hỏng.'])->withInput();
+        }
 
         try {
             DB::beginTransaction();
@@ -174,8 +191,8 @@ class CampaignController extends Controller
                 'location_details' => $validated['location_details'],
                 'latitude' => $validated['latitude'] ?? null,
                 'longitude' => $validated['longitude'] ?? null,
-                'end_date' => $validated['end_date'],
-                'execution_date' => $validated['execution_date'],
+                'web_deadline' => $validated['web_deadline'],
+                'event_date' => $validated['event_date'],
             ]);
 
             $keepItemIds = [];
@@ -192,6 +209,7 @@ class CampaignController extends Controller
                     $existingItem = CampaignItem::find($item['id']);
                     if ($existingItem && $existingItem->campaign_id === $campaign->id) {
                         $existingItem->update([
+                            'item_type' => $item['item_type'],
                             'item_name' => $item['item_name'],
                             'target_quantity' => $item['target_quantity'],
                             'unit' => $item['unit'],
@@ -203,6 +221,7 @@ class CampaignController extends Controller
                     $newItem = CampaignItem::create([
                         'campaign_id' => $campaign->id,
                         'category_id' => $assignedCategoryId,
+                        'item_type' => $item['item_type'],
                         'item_name' => $item['item_name'],
                         'target_quantity' => $item['target_quantity'],
                         'unit' => $item['unit'],

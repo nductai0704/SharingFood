@@ -11,6 +11,7 @@ class FoodClaim extends Model
         'user_id',
         'quantity',
         'status',
+        'message',
         'shipping_method',
         'pickup_contact_name',
         'pickup_contact_phone',

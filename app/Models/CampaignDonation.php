@@ -9,6 +9,10 @@ class CampaignDonation extends Model
     protected $table = 'campaign_donations';
     protected $guarded = [];
 
+    protected $casts = [
+        'expires_at' => 'datetime',
+    ];
+
     public function user()
     {
         return $this->belongsTo(User::class);

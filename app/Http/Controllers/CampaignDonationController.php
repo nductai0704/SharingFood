@@ -51,11 +51,19 @@ class CampaignDonationController extends Controller
         $donationCode = 'SF-' . strtoupper(\Illuminate\Support\Str::random(6));
 
         $error = null;
-        \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $campaignId, $donationCode, &$error) {
+        $campaign = Campaign::findOrFail($campaignId);
+        
+        \Illuminate\Support\Facades\DB::transaction(function () use ($validated, $campaign, $donationCode, &$error) {
             foreach ($validated['items'] as $item) {
                 $campaignItem = CampaignItem::withSum(['donations as pending_quantity' => function ($q) {
                     $q->where('status', 'pending');
                 }], 'donation_quantity')->lockForUpdate()->findOrFail($item['campaign_item_id']);
+
+                // Backend Validation: Chặn đồ tươi trước web_deadline
+                if ($campaignItem->item_type === 'fresh' && now()->isBefore($campaign->web_deadline)) {
+                    $error = "Vật phẩm '{$campaignItem->item_name}' là đồ tươi. Chỉ mở nhận quyên góp ở Mốc 2 (sau " . $campaign->web_deadline->format('d/m/Y H:i') . ").";
+                    return; // exit loop
+                }
 
                 $total = $campaignItem->current_quantity + ($campaignItem->pending_quantity ?? 0);
                 $remaining = max(0, $campaignItem->target_quantity - $total);
@@ -65,8 +73,15 @@ class CampaignDonationController extends Controller
                     return; // exit loop
                 }
 
+                // Tính toán expires_at
+                $maxHours = $campaignItem->item_type === 'fresh' ? 24 : 48;
+                $maxExpiryDate = now()->addHours($maxHours);
+                $eventDate = \Carbon\Carbon::parse($campaign->event_date);
+                
+                $expiresAt = $maxExpiryDate->min($eventDate);
+
                 CampaignDonation::create([
-                    'campaign_id' => $campaignId,
+                    'campaign_id' => $campaign->id,
                     'user_id' => auth()->id(),
                     'campaign_item_id' => $item['campaign_item_id'],
                     'donation_quantity' => $item['donation_quantity'],
@@ -75,6 +90,7 @@ class CampaignDonationController extends Controller
                     'shipping_method' => $validated['shipping_method'],
                     'donation_code' => $donationCode,
                     'status' => 'pending',
+                    'expires_at' => $expiresAt,
                 ]);
             }
         });

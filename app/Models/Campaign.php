@@ -11,7 +11,8 @@ class Campaign extends Model
 
     // Tự động ép kiểu ngày tháng
     protected $casts = [
-        'end_date' => 'datetime',
+        'web_deadline' => 'datetime',
+        'event_date' => 'datetime',
     ];
 
     public function user()

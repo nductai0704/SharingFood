@@ -46,7 +46,7 @@ Route::get('/home', function () {
         }], 'donation_quantity');
     }])
         ->where('status', 'active')
-        ->where('end_date', '>=', now()->startOfDay());
+        ->where('event_date', '>=', now()->startOfDay());
 
     if (auth()->check()) {
         $campaignQuery->where('user_id', '!=', auth()->id());
@@ -109,6 +109,8 @@ Route::post('/food-claims/{claim}/cancel', [FoodPostController::class, 'cancelCl
 Route::post('/food-claims/{claim}/complete', [FoodPostController::class, 'completeClaim'])->middleware('auth')->name('food-claims.complete');
 Route::patch('/food-claims/{claim}/shipper', [FoodPostController::class, 'updateShipper'])->middleware('auth')->name('food-claims.update_shipper');
 
+Route::post('/api/ai/categorize-food', [\App\Http\Controllers\AiServiceController::class, 'categorizeFood'])->middleware('auth');
+
 
 
 // Dynamic dashboard redirector based on User Role & Status
@@ -121,7 +123,7 @@ Route::get('/dashboard', function () {
             ? redirect()->route('charity.dashboard')
             : redirect()->route('charity.pending');
     } else {
-        // personal or small_business
+        // personal
         return redirect()->route('home');
     }
 })->middleware(['auth', 'verified'])->name('dashboard');
@@ -129,6 +131,8 @@ Route::get('/dashboard', function () {
 // Admin panel routes
 Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
     Route::get('/admin/dashboard', [\App\Http\Controllers\AdminController::class, 'index'])->name('admin.dashboard');
+    Route::get('/admin/export-pdf', [\App\Http\Controllers\AdminController::class, 'exportPdf'])->name('admin.export.pdf');
+    Route::get('/admin/export-excel', [\App\Http\Controllers\AdminController::class, 'exportExcel'])->name('admin.export.excel');
     Route::post('/admin/users/{user}/verify', [\App\Http\Controllers\AdminController::class, 'verifyUser'])->name('admin.users.verify');
     Route::post('/admin/users/{user}/toggle-ban', [\App\Http\Controllers\AdminController::class, 'toggleBanUser'])->name('admin.users.toggle-ban');
     Route::post('/admin/posts/{post}/moderate', [\App\Http\Controllers\AdminController::class, 'moderatePost'])->name('admin.posts.moderate');
@@ -153,7 +157,7 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
             }], 'donation_quantity');
         }])
             ->where('status', 'active')
-            ->where('end_date', '>=', now()->startOfDay())
+            ->where('event_date', '>=', now()->startOfDay())
             ->where('user_id', '!=', auth()->id());
             
         $dbActiveCampaigns = $campaignQuery->latest()->get()->filter(function ($campaign) {

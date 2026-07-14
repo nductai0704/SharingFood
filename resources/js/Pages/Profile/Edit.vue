@@ -71,6 +71,7 @@ const activeTabTitle = computed(() => {
                                 👤 Thông tin cá nhân
                             </button>
                             <button
+                                v-if="$page.props.auth.user.role !== 'admin'"
                                 @click="activeTab = 'history'"
                                 :class="[
                                     activeTab === 'history'

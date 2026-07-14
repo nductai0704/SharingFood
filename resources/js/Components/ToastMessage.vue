@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, watch, onMounted, onUnmounted } from 'vue';
 import { usePage } from '@inertiajs/vue3';
 

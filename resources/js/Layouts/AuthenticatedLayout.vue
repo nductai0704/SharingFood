@@ -285,8 +285,33 @@ const handleDbNotificationClick = (notification) => {
 <template>
   <div class="min-h-screen bg-gray-50 text-gray-800 font-sans">
     
-    <!-- Custom Premium Navbar -->
-    <nav class="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
+    <!-- Admin Top Navbar (Only for Admin Role) -->
+    <nav v-if="$page.props.auth.user && $page.props.auth.user.role === 'admin'" class="bg-slate-900 text-white shadow-md sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-16 items-center">
+                <Link :href="route('dashboard')" class="flex items-center space-x-3">
+                    <div class="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center text-white font-bold">S</div>
+                    <span class="text-lg font-bold tracking-tight">ShareFood <span class="text-emerald-400">AdminPanel</span></span>
+                </Link>
+                <div class="flex items-center space-x-4">
+                    <Link :href="route('profile.edit')" class="flex flex-col text-right hidden sm:flex hover:text-emerald-400 text-left transition">
+                        <span class="text-sm font-semibold text-white">Ban Quản Trị</span>
+                        <span class="text-[10px] text-slate-400">Hồ sơ: {{ $page.props.auth.user.name }}</span>
+                    </Link>
+                    
+                    <!-- Nút Chuông Thông Báo (Shortcut về Dashboard) -->
+                    <Link :href="route('dashboard')" class="relative p-2 text-slate-300 hover:text-white transition rounded-full hover:bg-slate-800 focus:outline-none" title="Về Dashboard xem thông báo">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+                    </Link>
+                    
+                    <Link :href="route('logout')" method="post" as="button" class="text-xs bg-slate-800 hover:bg-red-600 px-3 py-2 rounded-xl transition duration-200">Đăng xuất</Link>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Custom Premium Navbar (For normal users) -->
+    <nav v-else class="bg-white border-b border-gray-100 sticky top-0 z-50 shadow-sm">
       <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div class="flex justify-between h-16">
           <!-- Logo -->
@@ -399,7 +424,7 @@ const handleDbNotificationClick = (notification) => {
                         </div>
                       </div>
                       <div class="flex justify-between items-center text-[10px] text-gray-400">
-                        <span>{{ new Date(item.created_at).toLocaleString('vi-VN') }}</span>
+                        <span>{{ new Date(item.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</span>
                       </div>
                       <!-- Các nút thao tác -->
                       <div class="flex items-center gap-2 pt-1">

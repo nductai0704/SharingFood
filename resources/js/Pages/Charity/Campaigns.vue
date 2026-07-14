@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { ref, computed } from 'vue';
 import { Link, Head, router } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
@@ -300,8 +300,8 @@ const submitRejectDonation = () => {
 
                 <!-- Chi tiết thông tin -->
                 <div class="space-y-1 text-xs text-gray-500">
-                  <p>📅 Hạn đóng cổng: <strong class="text-gray-800">{{ new Date(campaign.end_date).toLocaleDateString('vi-VN') }}</strong></p>
-                  <p v-if="campaign.execution_date">🚀 Ngày đi phát: <strong class="text-gray-800">{{ new Date(campaign.execution_date).toLocaleDateString('vi-VN') }}</strong></p>
+                  <p>📦 Mốc 1 (Đóng đồ khô): <strong class="text-gray-800">{{ new Date(campaign.web_deadline).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</strong></p>
+                  <p v-if="campaign.event_date">🚀 Mốc 2 (Ngày đi phát): <strong class="text-gray-800">{{ new Date(campaign.event_date).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}</strong></p>
                   <p>📍 Địa điểm: <strong class="text-gray-800 line-clamp-1">{{ campaign.location_details }}</strong></p>
                   <p v-if="campaign.description" class="line-clamp-2 mt-1">{{ campaign.description }}</p>
                 </div>

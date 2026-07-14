@@ -16,9 +16,38 @@ class ProcessTrustScoreJobs extends Command
     public function handle()
     {
         $this->processExpiredClaims();
+        $this->processExpiredDonations();
         $this->processPassiveRecovery();
         
         $this->info('Trust score jobs processed successfully.');
+    }
+
+    private function processExpiredDonations()
+    {
+        $expiredDonations = \App\Models\CampaignDonation::where('status', 'pending')
+            ->whereNotNull('expires_at')
+            ->where('expires_at', '<', now())
+            ->get();
+
+        foreach ($expiredDonations as $donation) {
+            $donation->status = 'cancelled';
+            $donation->cancel_reason = 'Hủy tự động do quá hạn giao hàng';
+            $donation->save();
+
+            if ($donation->user) {
+                $donation->user->penalizeTrustScore(20);
+            }
+            
+            \App\Models\SystemLog::create([
+                'action' => 'Hủy đơn quyên góp',
+                'description' => "Hệ thống tự động hủy đơn quyên góp {$donation->donation_code} do quá hạn giao hàng.",
+                'user_id' => $donation->user_id ?? 0,
+                'ip_address' => '127.0.0.1',
+                'created_at' => now()
+            ]);
+        }
+        
+        $this->info("Cancelled {$expiredDonations->count()} expired campaign donations.");
     }
 
     private function processExpiredClaims()

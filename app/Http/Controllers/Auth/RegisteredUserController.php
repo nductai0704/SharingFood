@@ -50,7 +50,7 @@ class RegisteredUserController extends Controller
             'phone'     => 'required|string|max:20',
             'address'   => 'required|string|max:500',
             'password'  => ['required', 'confirmed', Rules\Password::defaults()],
-            'role'      => 'required|string|in:personal,charity,small_business',
+            'role'      => 'required|string|in:personal,charity',
             'latitude'  => 'nullable|numeric|between:-90,90',
             'longitude' => 'nullable|numeric|between:-180,180',
         ];
@@ -162,7 +162,7 @@ class RegisteredUserController extends Controller
         Auth::login($user);
 
         // Chuyển hướng về route 'dashboard' -> Bộ điều hướng trung tâm ở web.php
-        // sẽ tự động phân làn theo role (admin/charity/personal/small_business)
+        // sẽ tự động phân làn theo role (admin/charity/personal)
         return redirect(route('dashboard', absolute: false));
     }
 }

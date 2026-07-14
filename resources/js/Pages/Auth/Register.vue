@@ -161,19 +161,36 @@ const submit = () => {
 
                 <form @submit.prevent="submit" class="space-y-3">
                     
-                    <div class="space-y-1">
-                        <label for="role" class="text-[10px] font-bold text-gray-700 tracking-wide uppercase">Vai trò tham gia</label>
-                        <select 
-                            id="role" 
-                            v-model="form.role"
-                            required
-                            class="w-full bg-gray-50 border border-gray-200 text-xs text-gray-900 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 cursor-pointer font-medium transition shadow-sm"
-                        >
-                            <option value="personal">Cá nhân (Nhận thực phẩm / Tặng đồ ăn)</option>
-                            <option value="charity">Tổ chức từ thiện (Cần duyệt minh chứng)</option>
-                            <option value="small_business">Hộ kinh doanh nhỏ (Quán ăn, bakery...)</option>
-                        </select>
-                        <p v-if="form.errors.role" class="text-[10px] text-red-500 font-medium">{{ form.errors.role }}</p>
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-bold text-gray-700 tracking-wide uppercase block">Vai trò tham gia</label>
+                        <div class="grid grid-cols-2 gap-3">
+                            <label 
+                                class="relative flex flex-col items-center justify-center p-3 rounded-2xl border-2 cursor-pointer transition-all duration-200 overflow-visible"
+                                :class="form.role === 'personal' ? 'border-emerald-500 bg-emerald-50 shadow-sm shadow-emerald-100' : 'border-gray-100 bg-gray-50/50 hover:bg-gray-100 hover:border-gray-200'"
+                            >
+                                <input type="radio" v-model="form.role" value="personal" class="sr-only" name="role" />
+                                <div class="text-2xl mb-1.5 transition-transform duration-200" :class="form.role === 'personal' ? 'scale-110 drop-shadow-sm' : 'opacity-60 grayscale'">👤</div>
+                                <span class="text-[11px] font-bold text-center leading-snug" :class="form.role === 'personal' ? 'text-emerald-700' : 'text-gray-500'">Cá nhân / Hộ KD</span>
+                                
+                                <div v-if="form.role === 'personal'" class="absolute -top-2 -right-2 w-5 h-5 bg-emerald-500 text-white rounded-full flex items-center justify-center shadow-md animate-in zoom-in duration-200">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                </div>
+                            </label>
+
+                            <label 
+                                class="relative flex flex-col items-center justify-center p-3 rounded-2xl border-2 cursor-pointer transition-all duration-200 overflow-visible"
+                                :class="form.role === 'charity' ? 'border-amber-500 bg-amber-50 shadow-sm shadow-amber-100' : 'border-gray-100 bg-gray-50/50 hover:bg-gray-100 hover:border-gray-200'"
+                            >
+                                <input type="radio" v-model="form.role" value="charity" class="sr-only" name="role" />
+                                <div class="text-2xl mb-1.5 transition-transform duration-200" :class="form.role === 'charity' ? 'scale-110 drop-shadow-sm' : 'opacity-60 grayscale'">🏢</div>
+                                <span class="text-[11px] font-bold text-center leading-snug" :class="form.role === 'charity' ? 'text-amber-700' : 'text-gray-500'">Tổ chức từ thiện</span>
+                                
+                                <div v-if="form.role === 'charity'" class="absolute -top-2 -right-2 w-5 h-5 bg-amber-500 text-white rounded-full flex items-center justify-center shadow-md animate-in zoom-in duration-200">
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
+                                </div>
+                            </label>
+                        </div>
+                        <p v-if="form.errors.role" class="text-[10px] text-red-500 font-medium mt-1 text-center">{{ form.errors.role }}</p>
                     </div>
 
                     <div class="grid grid-cols-2 gap-3">
