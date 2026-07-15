@@ -189,18 +189,34 @@ class CampaignDonationController extends Controller
 
     public function cancel($donationCode)
     {
-        $updated = CampaignDonation::where('user_id', auth()->id())
+        $donations = CampaignDonation::where('user_id', auth()->id())
             ->where('donation_code', $donationCode)
             ->where('status', 'pending')
-            ->update([
-                'status' => 'cancelled',
-            ]);
-
-        if ($updated) {
-            return back()->with('success', 'Đã hủy đơn quyên góp thành công!');
+            ->get();
+            
+        if ($donations->isEmpty()) {
+            return back()->with('error', 'Không tìm thấy đơn quyên góp phù hợp hoặc không thể hủy.');
         }
 
-        return back()->with('error', 'Không tìm thấy đơn quyên góp phù hợp hoặc không thể hủy.');
+        \Illuminate\Support\Facades\DB::transaction(function () use ($donations) {
+            foreach ($donations as $donation) {
+                $donation->status = 'cancelled';
+                $donation->save();
+            }
+            
+            $firstDonation = $donations->first();
+            $minutesSinceCreated = $firstDonation->created_at->diffInMinutes(now());
+            
+            // Trừ 10 điểm uy tín nếu hủy SAU 10 phút (thời gian ân hạn)
+            if ($minutesSinceCreated > 10) {
+                $user = auth()->user();
+                $user->penalizeTrustScore(10);
+                $campaignTitle = $firstDonation->campaign->title ?? 'Chiến dịch từ thiện';
+                $user->notify(new \App\Notifications\TrustScorePenalized(10, 'Hủy đơn quyên góp', "Bạn bị trừ 10 điểm uy tín do tự hủy đơn quyên góp cho chiến dịch \"{$campaignTitle}\" quá muộn (vượt quá 10 phút ân hạn)."));
+            }
+        });
+
+        return back()->with('success', 'Đã hủy đơn quyên góp thành công!');
     }
 
     public function rejectDonation(Request $request, $donationCode)

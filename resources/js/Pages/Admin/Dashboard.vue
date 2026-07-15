@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AdminCharts from './Partials/AdminCharts.vue';
+import ToastMessage from '@/Components/ToastMessage.vue';
 
 // Nhận dữ liệu truyền từ Laravel Controller sang thông qua Props
 const props = defineProps({
@@ -12,6 +13,7 @@ const props = defineProps({
     activeCampaigns: Array,    // Danh sách chiến dịch từ thiện đã duyệt 'active'
     pendingCampaigns: Array,   // Danh sách chiến dịch từ thiện chờ duyệt 'pending'
     systemLogs: Array,         // Danh sách nhật ký hệ thống
+    reports: Array,            // Danh sách báo cáo vi phạm
 });
 
 // State quản lý Tab đang hiển thị tích cực
@@ -139,6 +141,23 @@ const getStatusLabel = (status) => {
         banned: 'Bị khóa',
     };
     return labels[status] || status;
+};
+
+const selectedReport = ref(null);
+
+const resolveReport = (reportId, action) => {
+    const actionLabels = {
+        dismiss: 'Bỏ qua báo cáo',
+        penalize_reporter: 'Phạt người báo cáo (Vu khống)',
+        penalize_20: 'Phạt người bị báo cáo -20 điểm',
+        penalize_50: 'Phạt người bị báo cáo -50 điểm',
+        ban_user: 'Khóa vĩnh viễn người bị báo cáo'
+    };
+    if (confirm(`Bạn có chắc chắn muốn thực hiện hành động: ${actionLabels[action]}?`)) {
+        router.post(route('admin.reports.resolve', reportId), { action }, {
+            onSuccess: () => selectedReport.value = null
+        });
+    }
 };
 </script>
 
@@ -271,6 +290,14 @@ const getStatusLabel = (status) => {
                     class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
                 >
                     📜 Nhật ký Hệ thống
+                </button>
+                <button 
+                    @click="activeTab = 'reports'" 
+                    :class="activeTab === 'reports' ? 'bg-slate-900 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                    class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-1"
+                >
+                    🚩 Báo cáo vi phạm
+                    <span v-if="reports?.filter(r => r.status === 'pending').length > 0" class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{{ reports?.filter(r => r.status === 'pending').length }}</span>
                 </button>
             </div>
 
@@ -697,6 +724,72 @@ const getStatusLabel = (status) => {
                     </table>
                 </div>
             </div>
+            <!-- TAB 5: BÁO CÁO VI PHẠM -->
+            <div v-if="activeTab === 'reports'" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in">
+                <div class="p-6 border-b border-gray-100 flex justify-between items-center flex-wrap gap-2">
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-950">🚩 Quản lý Báo cáo vi phạm</h2>
+                        <p class="text-xs text-gray-500 mt-1">Danh sách các báo cáo từ người dùng về thực phẩm hỏng, lừa đảo, hoặc hành vi không chuẩn mực.</p>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
+                            <tr>
+                                <th class="px-6 py-4">Thời gian</th>
+                                <th class="px-6 py-4">Người báo cáo</th>
+                                <th class="px-6 py-4">Người bị báo cáo</th>
+                                <th class="px-6 py-4">Lý do</th>
+                                <th class="px-6 py-4">Trạng thái</th>
+                                <th class="px-6 py-4 text-right">Hành động</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">
+                            <tr v-for="report in reports" :key="report.id" class="hover:bg-gray-50/70 transition">
+                                <td class="px-6 py-4 text-xs font-medium text-gray-500 whitespace-nowrap">
+                                    {{ new Date(report.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="text-xs text-gray-900 font-semibold" v-if="report.reporter">
+                                        {{ report.reporter.name }}
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <div class="text-xs text-gray-900 font-semibold" v-if="report.reported_user">
+                                        {{ report.reported_user.name }}
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-gray-700 leading-relaxed text-xs">
+                                    <span class="font-bold text-red-600 block mb-0.5">{{ report.reason }}</span>
+                                    <span class="line-clamp-2 text-gray-500" :title="report.details">{{ report.details }}</span>
+                                </td>
+                                <td class="px-6 py-4">
+                                    <span :class="{
+                                        'bg-amber-50 text-amber-700 border-amber-100': report.status === 'pending',
+                                        'bg-emerald-50 text-emerald-700 border-emerald-100': report.status === 'resolved',
+                                        'bg-gray-50 text-gray-700 border-gray-100': report.status === 'dismissed',
+                                    }" class="text-[10px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap">
+                                        {{ report.status === 'pending' ? 'Chờ xử lý' : (report.status === 'resolved' ? 'Đã xử lý' : 'Đã bỏ qua') }}
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 text-right">
+                                    <button 
+                                        @click="selectedReport = report"
+                                        class="text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg transition"
+                                    >
+                                        Xem chi tiết
+                                    </button>
+                                </td>
+                            </tr>
+                            <tr v-if="!reports || reports.length === 0">
+                                <td colspan="6" class="text-center py-8 text-sm text-gray-400 italic">
+                                    Chưa có báo cáo vi phạm nào.
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </main>
 
         <div v-if="selectedCharity" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50 animate-fade-in">
@@ -808,6 +901,77 @@ const getStatusLabel = (status) => {
                 </div>
             </div>
         </div>
+        <!-- Modal Chi tiết Báo cáo -->
+        <div v-if="selectedReport" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center p-4 z-50 animate-fade-in">
+            <div class="bg-white w-full max-w-2xl rounded-3xl shadow-xl border border-gray-100 overflow-hidden flex flex-col max-h-[90vh]">
+                <div class="p-6 bg-slate-50 border-b border-gray-100 flex justify-between items-center shrink-0">
+                    <div>
+                        <h3 class="text-base font-bold text-gray-950 flex items-center gap-2">
+                            <span class="text-red-500">🚩</span> Chi tiết Báo cáo
+                        </h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Ngày báo cáo: {{ new Date(selectedReport.created_at).toLocaleString('vi-VN') }}</p>
+                    </div>
+                    <button @click="selectedReport = null" class="text-gray-400 hover:text-gray-600 text-xl font-bold p-1">×</button>
+                </div>
+                
+                <div class="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                    <div class="grid grid-cols-2 gap-4">
+                        <div class="bg-gray-50 p-4 rounded-xl border border-gray-100">
+                            <span class="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">Người báo cáo</span>
+                            <div class="font-bold text-gray-900 text-sm">{{ selectedReport.reporter?.name }}</div>
+                            <div class="text-xs text-gray-500 mt-0.5">{{ selectedReport.reporter?.email }}</div>
+                        </div>
+                        <div class="bg-red-50 p-4 rounded-xl border border-red-100">
+                            <span class="text-[10px] font-bold text-red-500 uppercase tracking-wider block mb-1">Người bị báo cáo</span>
+                            <div class="font-bold text-red-900 text-sm">{{ selectedReport.reported_user?.name }}</div>
+                            <div class="text-xs text-red-700 mt-0.5">{{ selectedReport.reported_user?.email }}</div>
+                        </div>
+                    </div>
+
+                    <div class="space-y-2">
+                        <span class="text-sm font-bold text-gray-900">Nội dung tố cáo:</span>
+                        <div class="bg-gray-50 p-4 rounded-xl border border-gray-200">
+                            <p class="font-bold text-red-600 text-sm">{{ selectedReport.reason }}</p>
+                            <p class="text-sm text-gray-700 mt-2 whitespace-pre-line">{{ selectedReport.details || 'Không có mô tả chi tiết.' }}</p>
+                        </div>
+                    </div>
+
+                    <div v-if="selectedReport.proof_image && selectedReport.proof_image.length > 0" class="space-y-2">
+                        <span class="text-sm font-bold text-gray-900">Ảnh bằng chứng đính kèm:</span>
+                        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 bg-gray-50 p-2 rounded-xl border border-gray-200">
+                            <img v-for="(img, idx) in selectedReport.proof_image" :key="idx" :src="img.startsWith('/storage') ? img : '/storage/' + img" class="w-full aspect-square object-cover rounded-lg shadow-sm" alt="Ảnh bằng chứng" />
+                        </div>
+                    </div>
+
+                    <!-- Thông tin Bài viết / Đơn hàng liên quan (nếu có) -->
+                    <div v-if="selectedReport.food_post" class="space-y-2">
+                        <span class="text-sm font-bold text-gray-900">Bài đăng liên quan:</span>
+                        <div class="bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-start gap-3">
+                            <img :src="selectedReport.food_post.image_url ? (selectedReport.food_post.image_url.startsWith('/storage') ? selectedReport.food_post.image_url : '/storage/' + selectedReport.food_post.image_url) : 'https://images.unsplash.com/photo-1546069901-ba9599a7e63c?auto=format&fit=crop&w=600&q=80'" class="w-12 h-12 rounded-lg object-cover" />
+                            <div>
+                                <p class="font-bold text-blue-900 text-sm">{{ selectedReport.food_post.title }}</p>
+                                <p class="text-xs text-blue-700 mt-0.5">Tạo ngày: {{ new Date(selectedReport.food_post.created_at).toLocaleDateString('vi-VN') }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div v-if="selectedReport.status === 'pending'" class="p-6 bg-slate-50 border-t border-gray-100 flex flex-wrap justify-end gap-2 shrink-0">
+                    <button @click="resolveReport(selectedReport.id, 'dismiss')" class="text-xs bg-white hover:bg-gray-100 text-gray-700 font-bold px-4 py-2.5 rounded-xl border border-gray-200 transition">Bỏ qua báo cáo</button>
+                    <button @click="resolveReport(selectedReport.id, 'penalize_reporter')" class="text-xs bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold px-4 py-2.5 rounded-xl transition">Phạt người tố cáo (Vu khống)</button>
+                    <button @click="resolveReport(selectedReport.id, 'penalize_20')" class="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-bold px-4 py-2.5 rounded-xl transition">Phạt -20 Uy tín</button>
+                    <button @click="resolveReport(selectedReport.id, 'penalize_50')" class="text-xs bg-orange-100 hover:bg-orange-200 text-orange-800 font-bold px-4 py-2.5 rounded-xl transition">Phạt -50 Uy tín</button>
+                    <button @click="resolveReport(selectedReport.id, 'ban_user')" class="text-xs bg-red-600 hover:bg-red-700 text-white font-bold px-4 py-2.5 rounded-xl shadow-sm transition">Khóa Vĩnh viễn</button>
+                </div>
+                <div v-else class="p-6 bg-slate-50 border-t border-gray-100 flex justify-end shrink-0">
+                    <div class="px-4 py-2 bg-emerald-50 text-emerald-700 text-sm font-bold rounded-xl border border-emerald-200 flex items-center gap-2">
+                        <span>✅</span> Đã xử lý xong
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <ToastMessage />
 
     </div>
 </template>

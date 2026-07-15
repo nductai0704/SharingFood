@@ -389,6 +389,13 @@ class FoodPostController extends Controller
                 if (!in_array($claim->status, ['pending', 'approved'])) {
                     return ['success' => false, 'message' => 'Yêu cầu này không thể hủy ở trạng thái hiện tại.'];
                 }
+
+                // Không cho phép hủy nếu giao dịch đang bị khiếu nại
+                $hasPendingReport = \App\Models\Report::where('food_claim_id', $claim->id)->where('status', 'pending')->exists();
+                if ($hasPendingReport) {
+                    return ['success' => false, 'message' => 'Giao dịch đang bị khiếu nại (báo cáo). Mọi thao tác tạm thời đóng băng cho đến khi Admin giải quyết xong.'];
+                }
+                $originalStatus = $claim->status;
                 
                 $claim->status = 'cancelled';
                 $claim->cancel_reason = $cancelReason;
@@ -404,6 +411,12 @@ class FoodPostController extends Controller
                 // Apply penalty if the giver cancelled because of receiver's fault
                 if ($user->id === $post->user_id && $claim->user && in_array($cancelReason, ['Spam/Phá bĩnh', 'Người nhận không đến lấy đúng hẹn', 'Thông tin người nhận không chính xác'])) {
                     $claim->user->penalizeTrustScore(20);
+                }
+                
+                // Trừ điểm nếu Người nhận tự hủy giao dịch khi đã được duyệt
+                if ($user->id === $claim->user_id && $originalStatus === 'approved') {
+                    $user->penalizeTrustScore(10);
+                    $user->notify(new \App\Notifications\TrustScorePenalized(10, 'Hủy đơn phút chót', "Bạn bị trừ 10 điểm uy tín do tự hủy yêu cầu nhận thực phẩm (từ bài \"{$post->title}\") sau khi người cho đã chốt đơn."));
                 }
                 
                 // Hoàn lại kho thực phẩm
@@ -487,6 +500,12 @@ class FoodPostController extends Controller
                 if ($claim->status !== 'approved') {
                     return ['success' => false, 'message' => 'Giao dịch chỉ có thể hoàn thành khi đã được duyệt trước đó.'];
                 }
+
+                // Không cho phép xác nhận hoàn thành nếu giao dịch đang bị khiếu nại
+                $hasPendingReport = \App\Models\Report::where('food_claim_id', $claim->id)->where('status', 'pending')->exists();
+                if ($hasPendingReport) {
+                    return ['success' => false, 'message' => 'Giao dịch đang bị khiếu nại (báo cáo). Mọi thao tác tạm thời đóng băng cho đến khi Admin giải quyết xong.'];
+                }
                 
                 $claim->status = 'completed';
                 $claim->save();
@@ -495,6 +514,12 @@ class FoodPostController extends Controller
                 if ($claim->user) {
                     $claim->user->addTrustScore(10);
                     $claim->user->notify(new \App\Notifications\TrustScoreRewarded(10, 'Hoàn thành giao dịch', "Bạn được cộng 10 điểm uy tín vì giao dịch xin đồ từ bài viết \"{$post->title}\" đã hoàn thành thành công."));
+                }
+                
+                // Reward trust score to the giver (poster)
+                if ($post->user) {
+                    $post->user->addTrustScore(10);
+                    $post->user->notify(new \App\Notifications\TrustScoreRewarded(10, 'Lan tỏa yêu thương', "Tuyệt vời! Bạn được cộng 10 điểm uy tín vì đã chia sẻ thành công thực phẩm từ bài viết \"{$post->title}\" đến tay người cần."));
                 }
                 
                 // Ghi nhật ký hệ thống
@@ -506,7 +531,7 @@ class FoodPostController extends Controller
                     'created_at' => now()
                 ]);
                 
-                return ['success' => true, 'message' => 'Xác nhận hoàn thành giao dịch thành công! Cộng 10 điểm uy tín cho người nhận.'];
+                return ['success' => true, 'message' => 'Xác nhận hoàn thành giao dịch thành công! Đã cộng 10 điểm cho bạn và 10 điểm cho người nhận.'];
             });
             
             if ($result['success']) {

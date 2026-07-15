@@ -132,6 +132,9 @@ class AdminController extends Controller
         $pendingCampaigns = Campaign::with(['user', 'items'])->where('status', 'pending')->orderBy('created_at', 'desc')->get();
         $activeCampaigns = Campaign::with(['user', 'items'])->where('status', 'active')->orderBy('created_at', 'desc')->get();
 
+        // Danh sách báo cáo vi phạm
+        $reports = \App\Models\Report::with(['reporter', 'reportedUser', 'foodPost', 'foodClaim'])->orderBy('created_at', 'desc')->get();
+
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
             'chartData' => $chartData,
@@ -140,6 +143,7 @@ class AdminController extends Controller
             'pendingCampaigns' => $pendingCampaigns,
             'activeCampaigns' => $activeCampaigns,
             'systemLogs' => $systemLogs,
+            'reports' => $reports,
         ]);
     }
 

@@ -25,6 +25,9 @@ Route::get('/home', function () {
     if (auth()->check()) {
         $dbMyClaims = \App\Models\FoodClaim::where('user_id', auth()->id())
             ->with(['foodPost.user'])
+            ->withExists(['reports as is_disputed' => function($q) {
+                $q->where('status', 'pending');
+            }])
             ->latest()
             ->get();
         
@@ -137,7 +140,11 @@ Route::middleware(['auth', 'verified', 'role:admin'])->group(function () {
     Route::post('/admin/users/{user}/toggle-ban', [\App\Http\Controllers\AdminController::class, 'toggleBanUser'])->name('admin.users.toggle-ban');
     Route::post('/admin/posts/{post}/moderate', [\App\Http\Controllers\AdminController::class, 'moderatePost'])->name('admin.posts.moderate');
     Route::post('/admin/campaigns/{campaign}/moderate', [\App\Http\Controllers\AdminController::class, 'moderateCampaign'])->name('admin.campaigns.moderate');
+    Route::post('/admin/reports/{report}/resolve', [\App\Http\Controllers\ReportController::class, 'resolve'])->name('admin.reports.resolve');
 });
+
+// Reports
+Route::post('/reports', [\App\Http\Controllers\ReportController::class, 'store'])->middleware('auth')->name('reports.store');
 
 // Charity routes (general group checking for role:charity)
 Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
@@ -148,6 +155,9 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
         }
         $dbMyClaims = \App\Models\FoodClaim::where('user_id', auth()->id())
             ->with(['foodPost.user'])
+            ->withExists(['reports as is_disputed' => function($q) {
+                $q->where('status', 'pending');
+            }])
             ->latest()
             ->get();
             

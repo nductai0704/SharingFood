@@ -17,8 +17,15 @@ class CheckExpiredTransactions extends Command
 
         // 1. Food Claims (Yêu cầu nhận thực phẩm lẻ)
         // Nếu đã được duyệt (approved) quá 60 phút mà chưa hoàn thành -> Tự động hủy
+        // Bỏ qua các đơn đang có khiếu nại (báo cáo) chưa được giải quyết
         $expiredClaims = \App\Models\FoodClaim::where('status', 'approved')
             ->where('approved_at', '<', now()->subMinutes(60))
+            ->whereNotIn('id', function($query) {
+                $query->select('food_claim_id')
+                      ->from('reports')
+                      ->where('status', 'pending')
+                      ->whereNotNull('food_claim_id');
+            })
             ->get();
 
         foreach ($expiredClaims as $claim) {

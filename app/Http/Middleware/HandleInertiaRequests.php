@@ -39,10 +39,16 @@ class HandleInertiaRequests extends Middleware
                         $query->where('user_id', $request->user()->id);
                     })
                     ->with(['user', 'foodPost'])
+                    ->withExists(['reports as is_disputed' => function($q) {
+                        $q->where('status', 'pending');
+                    }])
                     ->latest()
                     ->get() : [],
                 'myClaims' => $request->user() ? \App\Models\FoodClaim::where('user_id', $request->user()->id)
                     ->with(['foodPost.user'])
+                    ->withExists(['reports as is_disputed' => function($q) {
+                        $q->where('status', 'pending');
+                    }])
                     ->latest()
                     ->get() : [],
                 'pendingDonationsCount' => $request->user() && $request->user()->role === 'charity'

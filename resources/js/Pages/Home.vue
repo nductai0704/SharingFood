@@ -1,7 +1,28 @@
-﻿<script setup>
+<script setup>
 import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
 import { Head, Link, usePage, router, useForm } from '@inertiajs/vue3';
 import ToastMessage from '@/Components/ToastMessage.vue';
+import ReportModal from '@/Components/ReportModal.vue';
+
+const showReportModal = ref(false);
+const reportTargetUser = ref(null);
+const reportTargetPost = ref(null);
+const reportTargetClaim = ref(null);
+
+const openReportModal = (user, post, claim = null) => {
+    console.log("Opening report modal with:", { user, post, claim });
+    reportTargetUser.value = user;
+    reportTargetPost.value = post;
+    reportTargetClaim.value = claim;
+    showReportModal.value = true;
+};
+
+const closeReportModal = () => {
+    showReportModal.value = false;
+    reportTargetUser.value = null;
+    reportTargetPost.value = null;
+    reportTargetClaim.value = null;
+};
 
 const props = defineProps({
     dbMyClaims: Array,
@@ -140,6 +161,7 @@ const allNotifications = computed(() => {
                 id: claim.id,
                 type: isPenalized ? 'trust_score_penalized' : 'outgoing_rejected',
                 title: isPenalized ? 'Trừ điểm uy tín' : 'Yêu cầu bị từ chối',
+                points: isPenalized ? 20 : 0,
                 message: isPenalized 
                     ? `⚠️ Yêu cầu nhận thực phẩm từ bài viết "${claim.food_post?.title}" đã bị từ chối (Lý do: ${claim.cancel_reason}). Bạn bị trừ 20 điểm uy tín.`
                     : `❌ Yêu cầu nhận thực phẩm từ bài viết "${claim.food_post?.title}" đã bị người cho từ chối (Lý do: ${claim.cancel_reason || 'Không có lý do'}).`,
@@ -176,6 +198,7 @@ const allNotifications = computed(() => {
                 title: title,
                 message: n.data.message,
                 url: n.data.url,
+                points: n.data.points,
                 created_at: n.created_at,
                 is_db_notification: true
             });
@@ -232,8 +255,9 @@ const approvedReceivedClaims = computed(() => {
 const receiverCancelReasons = [
     'Đổi phương thức nhận hàng',
     'Bận đột xuất không đến được',
-    'Không liên lạc được với người cho',
-    'Lý do khác'
+    'Xin nhầm số lượng / vật phẩm',
+    'Đã tìm được nguồn hỗ trợ khác',
+    'Lý do cá nhân khác'
 ];
 
 const giverCancelReasons = [
@@ -743,6 +767,11 @@ const startCountdowns = () => {
         const newCountdowns = { ...countdowns.value };
         
         allApproved.forEach(claim => {
+            if (claim.is_disputed) {
+                newCountdowns[claim.id] = 'Tạm dừng';
+                return;
+            }
+
             const expireTime = new Date(claim.expires_at).getTime();
             const distance = expireTime - now;
 
@@ -1015,7 +1044,7 @@ const submitDonation = () => {
                             <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'outgoing_rejected'">Từ chối</span>
                             <span class="font-bold text-[10px] uppercase tracking-wider text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100" v-else-if="item.type === 'new_donation'">Quyên góp mới</span>
                             <span class="font-bold text-[10px] uppercase tracking-wider text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-100" v-else-if="item.type === 'trust_score_rewarded'">⭐ +10 Uy tín</span>
-                            <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'trust_score_penalized'">⚠️ -20 Uy tín</span>
+                            <span class="font-bold text-[10px] uppercase tracking-wider text-red-700 bg-red-50 px-1.5 py-0.5 rounded border border-red-100" v-else-if="item.type === 'trust_score_penalized'">⚠️ -{{ item.points || 10 }} Uy tín</span>
                           </div>
 
                           <p v-if="item.type === 'incoming_pending'" class="text-gray-800 text-[11px] leading-relaxed">
@@ -1374,13 +1403,21 @@ const submitDonation = () => {
                     <div v-if="$page.props.auth.user && post.user_id === $page.props.auth.user.id" class="w-full bg-gray-50 border border-gray-200/80 text-gray-400 font-bold text-xs py-2.5 px-4 rounded-xl text-center select-none">
                       👤 Bài đăng của bạn
                     </div>
-                    <button 
-                      v-else 
-                      @click="$page.props.auth.user ? openClaimModal(post) : router.visit(route('login'))" 
-                      class="w-full bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shadow-emerald-100 hover:shadow-emerald-200 hover:-translate-y-[1px] active:translate-y-0 transition-all duration-150 cursor-pointer"
-                    >
-                      Gửi yêu cầu nhận
-                    </button>
+                    <div v-else class="flex gap-2 w-full">
+                      <button 
+                        @click="$page.props.auth.user ? openClaimModal(post) : router.visit(route('login'))" 
+                        class="flex-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs py-2.5 px-4 rounded-xl shadow-md shadow-emerald-100 hover:shadow-emerald-200 hover:-translate-y-[1px] active:translate-y-0 transition-all duration-150 cursor-pointer"
+                      >
+                        Gửi yêu cầu nhận
+                      </button>
+                      <button 
+                        @click="openReportModal(post.user, post)" 
+                        class="bg-white hover:bg-red-50 text-red-500 border border-red-200 hover:border-red-300 font-bold px-3 rounded-xl transition cursor-pointer flex items-center justify-center shrink-0 shadow-sm text-sm"
+                        title="Báo cáo bài viết này"
+                      >
+                        🚩
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1535,6 +1572,11 @@ const submitDonation = () => {
                     <span>Số lượng yêu cầu:</span>
                     <span class="font-semibold text-gray-800">{{ claim.quantity }} {{ claim.food_post?.unit }}</span>
                   </div>
+                  
+                  <div class="flex justify-between text-[11px] text-gray-500">
+                    <span>Chủ bài đăng:</span>
+                    <span class="font-semibold text-gray-800">{{ claim.food_post?.user?.name || 'Đang cập nhật' }}</span>
+                  </div>
 
                   <div v-if="claim.message" class="bg-gray-100 p-2 rounded-lg text-gray-700 text-[11px] italic mt-1 border-l-2 border-emerald-400">
                     💬 Lời nhắn: {{ claim.message }}
@@ -1578,9 +1620,18 @@ const submitDonation = () => {
                     </div>
                   </div>
 
-                  <!-- Nút Hủy giao dịch (Cancel Claim) - Dành cho người nhận -->
-                  <div class="flex justify-end pt-1">
+                  <!-- Nút Báo cáo và Hủy giao dịch (Cancel Claim) - Dành cho người nhận -->
+                  <div class="flex justify-end gap-2 pt-1">
                     <button 
+                      v-if="claim.status === 'approved'"
+                      @click="openReportModal(claim.food_post?.user, claim.food_post, claim)"
+                      class="bg-white hover:bg-red-50 text-red-600 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-red-200 hover:border-red-300 transition text-center cursor-pointer shadow-sm flex items-center gap-1"
+                      title="Báo cáo người này"
+                    >
+                      🚩 Báo cáo
+                    </button>
+                    <button 
+                      v-if="!claim.is_disputed"
                       @click="openCancelModal(claim.id)" 
                       class="bg-white hover:bg-red-50 text-red-600 hover:text-red-700 font-bold text-[10px] px-3 py-1.5 rounded-lg border border-gray-200 hover:border-red-100 transition cursor-pointer shadow-sm"
                     >
@@ -1644,7 +1695,8 @@ const submitDonation = () => {
                   </div>
                   
                   <!-- Các nút thao tác dành cho người cho để kết thúc giao dịch -->
-                  <div class="flex items-center gap-2 pt-1">
+                  <div v-if="!claim.is_disputed" class="flex items-center gap-2 pt-1">
+
                     <button 
                       @click="handleCompleteClaim(claim.id)" 
                       class="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition text-center cursor-pointer shadow-sm shadow-emerald-100"
@@ -1876,6 +1928,7 @@ const submitDonation = () => {
         <div class="bg-gradient-to-r from-emerald-600 to-teal-700 p-6 text-white relative">
           <h3 class="font-extrabold text-lg">Đăng ký nhận thực phẩm</h3>
           <p class="text-emerald-100/90 text-xs mt-1">Vui lòng nhập số lượng bạn mong muốn nhận</p>
+
           <button 
             @click="closeClaimModal" 
             class="absolute top-5 right-5 text-emerald-100 hover:text-white transition bg-white/10 hover:bg-white/20 w-8 h-8 rounded-full flex items-center justify-center cursor-pointer"
@@ -2151,6 +2204,15 @@ const submitDonation = () => {
             </form>
         </div>
     </div>
+
+    <ReportModal
+        :show="showReportModal"
+        :target-user="reportTargetUser"
+        :target-post="reportTargetPost"
+        :target-claim="reportTargetClaim"
+        @close="closeReportModal"
+        @success="fetchNearbyFood"
+    />
 
     <ToastMessage />
 </template>

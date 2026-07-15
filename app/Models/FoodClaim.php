@@ -37,4 +37,9 @@ class FoodClaim extends Model
     {
         return $this->belongsTo(FoodPost::class);
     }
+
+    public function reports()
+    {
+        return $this->hasMany(Report::class, 'food_claim_id');
+    }
 }
