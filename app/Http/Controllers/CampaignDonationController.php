@@ -187,8 +187,12 @@ class CampaignDonationController extends Controller
         return back()->with('error', 'Không tìm thấy đơn quyên góp phù hợp hoặc không thể cập nhật.');
     }
 
-    public function cancel($donationCode)
+    public function cancel(Request $request, $donationCode)
     {
+        $validated = $request->validate([
+            'reason' => 'required|string|max:255',
+        ]);
+
         $donations = CampaignDonation::where('user_id', auth()->id())
             ->where('donation_code', $donationCode)
             ->where('status', 'pending')
@@ -198,9 +202,11 @@ class CampaignDonationController extends Controller
             return back()->with('error', 'Không tìm thấy đơn quyên góp phù hợp hoặc không thể hủy.');
         }
 
-        \Illuminate\Support\Facades\DB::transaction(function () use ($donations) {
+        \Illuminate\Support\Facades\DB::transaction(function () use ($donations, $validated) {
             foreach ($donations as $donation) {
                 $donation->status = 'cancelled';
+                $donation->cancel_reason = $validated['reason'];
+                $donation->cancelled_by = auth()->id();
                 $donation->save();
             }
             

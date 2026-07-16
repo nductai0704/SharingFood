@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { ref, computed } from 'vue';
 import { Link, Head, router } from '@inertiajs/vue3';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
@@ -47,6 +47,7 @@ const groupedPendingDonations = computed(() => {
                 shipping_method: d.shipping_method,
                 shipper_name: d.shipper_name,
                 shipper_license_plate: d.shipper_license_plate,
+                is_disputed: d.is_disputed,
                 items: []
             };
         }
@@ -243,8 +244,11 @@ const submitRejectDonation = () => {
               </div>
 
               <div class="mt-auto pt-1">
+                <div v-if="donation.is_disputed" class="w-full bg-red-50 border border-red-200 text-red-600 font-bold text-[11px] py-2 rounded-xl text-center shadow-sm">
+                  ⚠️ Đơn này đang bị Báo cáo vi phạm (Chờ xử lý)
+                </div>
                 <button 
-                  v-if="donation.shipping_method === 'delivery_service' && !donation.shipper_name"
+                  v-else-if="donation.shipping_method === 'delivery_service' && !donation.shipper_name"
                   disabled
                   class="w-full bg-gray-300 text-gray-500 cursor-not-allowed font-bold text-xs py-2 rounded-xl shadow-sm"
                 >

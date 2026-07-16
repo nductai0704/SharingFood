@@ -11,6 +11,8 @@ class Report extends Model
         'reported_user_id',
         'food_post_id',
         'food_claim_id',
+        'campaign_id',
+        'campaign_donation_id',
         'reason',
         'details',
         'proof_image',
@@ -41,6 +43,16 @@ class Report extends Model
     public function foodClaim()
     {
         return $this->belongsTo(FoodClaim::class, 'food_claim_id');
+    }
+
+    public function campaign()
+    {
+        return $this->belongsTo(Campaign::class, 'campaign_id');
+    }
+
+    public function campaignDonation()
+    {
+        return $this->belongsTo(CampaignDonation::class, 'campaign_donation_id');
     }
     
     public function resolver()

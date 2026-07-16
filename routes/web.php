@@ -37,6 +37,9 @@ Route::get('/home', function () {
                     $q->where('status', 'pending');
                 }], 'donation_quantity');
             }, 'campaignItem'])
+            ->withExists(['reports as is_disputed' => function($q) {
+                $q->where('status', 'pending');
+            }])
             ->where('status', 'pending') // Only show pending donations
             ->latest()
             ->get();
@@ -183,6 +186,9 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
                     $q->where('status', 'pending');
                 }], 'donation_quantity');
             }, 'campaignItem'])
+            ->withExists(['reports as is_disputed' => function($q) {
+                $q->where('status', 'pending');
+            }])
             ->where('status', 'pending')
             ->latest()
             ->get();
@@ -208,6 +214,9 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
             ->whereHas('campaign', function ($query) {
                 $query->where('user_id', auth()->id());
             })
+            ->withExists(['reports as is_disputed' => function($q) {
+                $q->where('status', 'pending');
+            }])
             ->where('status', 'pending')
             ->latest()
             ->get();
@@ -253,6 +262,9 @@ Route::middleware('auth')->group(function () {
     Route::post('/notifications/{id}/read', function ($id) {
         $notification = auth()->user()->notifications()->findOrFail($id);
         $notification->markAsRead();
+        if (request()->wantsJson() || request()->ajax()) {
+            return response()->json(['success' => true]);
+        }
         return back();
     })->name('notifications.read');
 });

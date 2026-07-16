@@ -18,11 +18,21 @@ class ReportController extends Controller
             'reported_user_id' => 'required|exists:users,id',
             'food_post_id' => 'nullable|exists:food_posts,id',
             'food_claim_id' => 'nullable|exists:food_claims,id',
+            'campaign_id' => 'nullable|exists:campaigns,id',
+            'campaign_donation_id' => 'nullable|exists:campaign_donations,id',
             'reason' => 'required|string|max:255',
             'details' => 'nullable|string',
-            'proof_images' => 'required|array|min:1|max:5',
+            'proof_images' => 'nullable|array|max:5',
             'proof_images.*' => 'image|max:5120', // Max 5MB per image
         ]);
+
+        if ($request->food_claim_id || $request->campaign_donation_id) {
+            $request->validate([
+                'proof_images' => 'required|array|min:1',
+            ], [
+                'proof_images.required' => 'Vui lòng cung cấp hình ảnh bằng chứng cho giao dịch này.',
+            ]);
+        }
 
         $proofImagePaths = [];
         if ($request->hasFile('proof_images')) {
@@ -37,6 +47,8 @@ class ReportController extends Controller
             'reported_user_id' => $request->reported_user_id,
             'food_post_id' => $request->food_post_id,
             'food_claim_id' => $request->food_claim_id,
+            'campaign_id' => $request->campaign_id,
+            'campaign_donation_id' => $request->campaign_donation_id,
             'reason' => $request->reason,
             'details' => $request->details,
             'proof_image' => $proofImagePaths,
@@ -152,6 +164,49 @@ class ReportController extends Controller
 
                 // Tự động đóng (resolve) các báo cáo khác cùng bài viết để Admin không phải duyệt lại
                 Report::where('food_post_id', $report->food_post_id)
+                    ->where('id', '!=', $report->id)
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'resolved',
+                        'resolved_by' => auth()->id(),
+                        'resolved_at' => now(),
+                    ]);
+            }
+
+            // Hide campaign and cancel pending donations if penalized
+            if ($report->campaign_id && in_array($request->action, ['penalize_20', 'penalize_50', 'ban_user'])) {
+                $campaign = \App\Models\Campaign::find($report->campaign_id);
+                if ($campaign && in_array($campaign->status, ['active'])) {
+                    $campaign->status = 'closed';
+                    $campaign->save();
+
+                    // Cancel pending donations
+                    $pendingDonations = \App\Models\CampaignDonation::where('campaign_id', $campaign->id)
+                        ->where('status', 'pending')
+                        ->get();
+                    
+                    foreach ($pendingDonations as $donation) {
+                        $donation->status = 'cancelled';
+                        $donation->cancel_reason = 'Hủy tự động: Chiến dịch bị đình chỉ do vi phạm quy chuẩn';
+                        $donation->cancelled_by = 'system';
+                        $donation->save();
+
+                        \App\Models\SystemLog::create([
+                            'action' => 'Hủy đơn đóng góp do gỡ chiến dịch (Bị Phạt)',
+                            'description' => "Đơn đóng góp của " . ($donation->user ? $donation->user->name : 'Người dùng') . " đã bị tự động hủy do chiến dịch \"{$campaign->title}\" bị gỡ bỏ vì vi phạm quy chuẩn.",
+                            'user_id' => auth()->id(),
+                            'ip_address' => request()->ip(),
+                            'created_at' => now()
+                        ]);
+
+                        if ($donation->user) {
+                            $donation->user->notify(new \App\Notifications\CampaignCancelledNotification($campaign->title, $report->reason));
+                        }
+                    }
+                }
+
+                // Tự động đóng (resolve) các báo cáo khác cùng chiến dịch để Admin không phải duyệt lại
+                Report::where('campaign_id', $report->campaign_id)
                     ->where('id', '!=', $report->id)
                     ->where('status', 'pending')
                     ->update([

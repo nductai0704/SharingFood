@@ -12,11 +12,11 @@ class AdminController extends Controller
     /**
      * Display the admin dashboard with overview statistics and user data.
      */
-    private function getStatsData(Request $request)
+    private function getApplyFilter(Request $request)
     {
         $period = $request->input('period', '7days'); // Mặc định 7 ngày
         
-        $applyFilter = function($query) use ($period, $request) {
+        return function($query) use ($period, $request) {
             if ($period === 'today') {
                 return $query->whereDate('created_at', today());
             } elseif ($period === '7days') {
@@ -35,6 +35,14 @@ class AdminController extends Controller
             // 'all' thì không filter
             return $query;
         };
+    }
+
+    /**
+     * Display the admin dashboard with overview statistics and user data.
+     */
+    private function getStatsData(Request $request)
+    {
+        $applyFilter = $this->getApplyFilter($request);
 
         $totalUsers = $applyFilter(User::query())->count();
         $totalFoodPosts = $applyFilter(\App\Models\FoodPost::query())->count();
@@ -57,12 +65,18 @@ class AdminController extends Controller
         $rescuedFoodVolume = $applyFilter(\App\Models\FoodClaim::where('status', 'completed'))->sum('quantity') 
                            + ($donationsStats->completed_quantity ?? 0);
 
+        $reportsStats = $applyFilter(\App\Models\Report::query())->selectRaw('
+            count(*) as total,
+            sum(case when status = "pending" then 1 else 0 end) as pending_count
+        ')->first();
+
         return [
             'total_users' => $totalUsers,
             'total_food_posts' => $totalFoodPosts,
             'total_campaigns' => $totalCampaigns,
             'claims_breakdown' => $claimsStats,
             'donations_breakdown' => $donationsStats,
+            'reports_breakdown' => $reportsStats,
             'rescued_volume' => $rescuedFoodVolume,
             'success_rate' => ($claimsStats->total ?? 0) > 0 ? round((($claimsStats->completed_count ?? 0) / $claimsStats->total) * 100, 1) . '%' : '0%',
         ];
@@ -72,28 +86,69 @@ class AdminController extends Controller
     {
         $stats = $this->getStatsData($request);
 
-        // Chart Data: 7 ngày qua
-        $last7Days = collect(range(6, 0))->map(function ($daysAgo) {
-            return now()->subDays($daysAgo)->format('Y-m-d');
-        });
+        $period = $request->input('period', '7days');
+        $startDate = now()->subDays(6)->startOfDay();
+        $endDate = now()->endOfDay();
+
+        if ($period === 'today') {
+            $startDate = now()->startOfDay();
+        } elseif ($period === '30days') {
+            $startDate = now()->subDays(29)->startOfDay();
+        } elseif ($period === 'custom') {
+            if ($request->filled('start_date')) {
+                $startDate = \Carbon\Carbon::parse($request->input('start_date'))->startOfDay();
+            }
+            if ($request->filled('end_date')) {
+                $endDate = \Carbon\Carbon::parse($request->input('end_date'))->endOfDay();
+            }
+        } elseif ($period === 'all') {
+            $firstUser = User::orderBy('created_at', 'asc')->first();
+            $startDate = $firstUser ? $firstUser->created_at->startOfDay() : now()->subDays(30)->startOfDay();
+            if ($startDate->diffInDays($endDate) > 365) {
+                $startDate = $endDate->copy()->subDays(365); // Giới hạn tối đa 1 năm để biểu đồ không bị quá tải
+            }
+        }
+
+        $dates = collect();
+        $currentDate = $startDate->copy();
+        while ($currentDate <= $endDate) {
+            $dates->push($currentDate->format('Y-m-d'));
+            $currentDate->addDay();
+        }
+
+        $usersCounts = User::whereBetween('created_at', [$startDate, $endDate])
+            ->selectRaw('DATE(created_at) as date, COUNT(*) as count')
+            ->groupBy('date')
+            ->pluck('count', 'date');
+
+        $foodPostsCounts = \App\Models\FoodPost::whereBetween('created_at', [$startDate, $endDate])
+            ->selectRaw('DATE(created_at) as date, COUNT(*) as count')
+            ->groupBy('date')
+            ->pluck('count', 'date');
+
+        $campaignsCounts = Campaign::whereBetween('created_at', [$startDate, $endDate])
+            ->selectRaw('DATE(created_at) as date, COUNT(*) as count')
+            ->groupBy('date')
+            ->pluck('count', 'date');
 
         $foodPostsChart = [];
         $campaignsChart = [];
         $usersChart = [];
-        foreach ($last7Days as $date) {
-            $foodPostsChart[] = \App\Models\FoodPost::whereDate('created_at', $date)->count();
-            $campaignsChart[] = Campaign::whereDate('created_at', $date)->count();
-            $usersChart[] = User::whereDate('created_at', $date)->count();
+        foreach ($dates as $date) {
+            $foodPostsChart[] = $foodPostsCounts->get($date, 0);
+            $campaignsChart[] = $campaignsCounts->get($date, 0);
+            $usersChart[] = $usersCounts->get($date, 0);
         }
 
         $shippingMethods = \App\Models\FoodClaim::selectRaw('shipping_method, count(*) as total')
             ->whereNotNull('shipping_method')
+            ->whereBetween('created_at', [$startDate, $endDate])
             ->groupBy('shipping_method')
             ->pluck('total', 'shipping_method')
             ->toArray();
 
         $chartData = [
-            'labels' => $last7Days->map(fn($d) => \Carbon\Carbon::parse($d)->format('d/m'))->toArray(),
+            'labels' => $dates->map(fn($d) => \Carbon\Carbon::parse($d)->format('d/m'))->toArray(),
             'food_posts' => $foodPostsChart,
             'campaigns' => $campaignsChart,
             'users' => $usersChart,
@@ -133,8 +188,10 @@ class AdminController extends Controller
         $activeCampaigns = Campaign::with(['user', 'items'])->where('status', 'active')->orderBy('created_at', 'desc')->get();
 
         // Danh sách báo cáo vi phạm
-        $reports = \App\Models\Report::with(['reporter', 'reportedUser', 'foodPost', 'foodClaim'])->orderBy('created_at', 'desc')->get();
-
+        $applyFilter = $this->getApplyFilter($request);
+        $reports = $applyFilter(\App\Models\Report::with(['reporter', 'reportedUser', 'foodPost', 'foodClaim', 'campaign', 'campaignDonation']))
+            ->orderBy('created_at', 'desc')
+            ->get();
         return Inertia::render('Admin/Dashboard', [
             'stats' => $stats,
             'chartData' => $chartData,
@@ -199,6 +256,15 @@ class AdminController extends Controller
                 </tr>
                 <tr><td>- Khối lượng đã hoàn thành (Nhận thành công)</td><td>' . ($stats['donations_breakdown']->completed_quantity ?? 0) . ' KG</td></tr>
                 <tr><td>- Khối lượng đang chờ xử lý</td><td>' . ($stats['donations_breakdown']->pending_quantity ?? 0) . ' KG</td></tr>
+                
+                <tr><td colspan="2"></td></tr>
+                
+                <tr>
+                    <th style="background-color: #f3f4f6; font-weight: bold; text-align: left;">BÁO CÁO VI PHẠM & UY TÍN</th>
+                    <th style="background-color: #f3f4f6;"></th>
+                </tr>
+                <tr><td>- Tổng số báo cáo vi phạm đã ghi nhận</td><td>' . ($stats['reports_breakdown']->total ?? 0) . '</td></tr>
+                <tr><td>- Báo cáo đang chờ xử lý</td><td>' . ($stats['reports_breakdown']->pending_count ?? 0) . '</td></tr>
             </table>
         </body>
         </html>';

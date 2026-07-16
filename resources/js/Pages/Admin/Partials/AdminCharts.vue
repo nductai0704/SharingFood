@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed } from 'vue';
 import {
   Chart as ChartJS,
@@ -39,13 +39,6 @@ const lineChartData = computed(() => ({
       borderColor: '#10b981',
       data: props.chartData.users,
       tension: 0.4
-    },
-    {
-      label: 'Chiến dịch mới',
-      backgroundColor: '#f59e0b', // amber-500
-      borderColor: '#f59e0b',
-      data: props.chartData.campaigns,
-      tension: 0.4
     }
   ]
 }));
@@ -57,6 +50,11 @@ const barChartData = computed(() => ({
       label: 'Bài đăng thực phẩm',
       backgroundColor: '#3b82f6', // blue-500
       data: props.chartData.food_posts
+    },
+    {
+      label: 'Chiến dịch mới',
+      backgroundColor: '#f59e0b', // amber-500
+      data: props.chartData.campaigns
     }
   ]
 }));
@@ -103,14 +101,14 @@ const chartOptions = {
 <template>
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
-      <h3 class="text-sm font-bold text-gray-800 mb-4">Tăng trưởng (7 Ngày qua)</h3>
+      <h3 class="text-sm font-bold text-gray-800 mb-4">Tăng trưởng Người Dùng</h3>
       <div class="h-64">
         <Line :data="lineChartData" :options="chartOptions" />
       </div>
     </div>
     
     <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col">
-      <h3 class="text-sm font-bold text-gray-800 mb-4">Hoạt động (7 Ngày qua)</h3>
+      <h3 class="text-sm font-bold text-gray-800 mb-4">Hoạt động Hệ thống</h3>
       <div class="h-64">
         <Bar :data="barChartData" :options="chartOptions" />
       </div>

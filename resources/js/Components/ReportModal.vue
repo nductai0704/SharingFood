@@ -26,12 +26,14 @@
               <p class="text-xs text-gray-500">Đối tượng bị báo cáo:</p>
               <p class="text-sm font-bold text-gray-800">{{ targetUser.name }}</p>
               <p v-if="targetPost" class="text-xs text-gray-600 line-clamp-1 mt-1">Bài viết: <span class="font-semibold">{{ targetPost.title }}</span></p>
+              <p v-else-if="targetCampaign" class="text-xs text-gray-600 line-clamp-1 mt-1">Chiến dịch: <span class="font-semibold">{{ targetCampaign.title }}</span></p>
+              <p v-if="targetDonation" class="text-xs text-gray-600 line-clamp-1 mt-1">Mã đơn đóng góp: <span class="font-semibold">{{ targetDonation.donation_code }}</span></p>
             </div>
 
             <div>
               <label class="block text-sm font-semibold text-gray-700 mb-2">Lý do báo cáo <span class="text-red-500">*</span></label>
               <div class="space-y-2">
-                <label v-for="reason in reasons" :key="reason" class="flex items-center p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-red-50/30 transition" :class="{'bg-red-50 border-red-200 ring-1 ring-red-500': form.reason === reason}">
+                <label v-for="reason in currentReasons" :key="reason" class="flex items-center p-3 border border-gray-200 rounded-xl cursor-pointer hover:bg-red-50/30 transition" :class="{'bg-red-50 border-red-200 ring-1 ring-red-500': form.reason === reason}">
                   <input type="radio" v-model="form.reason" :value="reason" class="w-4 h-4 text-red-600 bg-gray-100 border-gray-300 focus:ring-red-500" required>
                   <span class="ml-3 text-sm font-medium text-gray-700">{{ reason }}</span>
                 </label>
@@ -44,8 +46,13 @@
             </div>
 
             <div>
-              <label class="block text-sm font-semibold text-gray-700 mb-1">Ảnh bằng chứng <span class="text-red-500">*</span></label>
-              <p class="text-[11px] text-gray-500 mb-2">Vui lòng tải lên ảnh chụp màn hình tin nhắn, cuộc gọi hoặc tình trạng thực tế để chứng minh (Tối đa 5 ảnh).</p>
+              <label class="block text-sm font-semibold text-gray-700 mb-1">
+                Ảnh bằng chứng 
+                <span v-if="isImageRequired" class="text-red-500">*</span>
+                <span v-else class="text-gray-400 font-normal text-xs ml-1">(Không bắt buộc)</span>
+              </label>
+              <p v-if="isImageRequired" class="text-[11px] text-gray-500 mb-2">Vui lòng tải lên ảnh chụp màn hình tin nhắn, cuộc gọi hoặc tình trạng thực tế để chứng minh (Tối đa 5 ảnh).</p>
+              <p v-else class="text-[11px] text-gray-500 mb-2">Bạn có thể tải lên ảnh chụp màn hình minh chứng vi phạm (Tối đa 5 ảnh).</p>
               
               <div class="space-y-3">
                   <!-- Lưới hiển thị ảnh đã chọn -->
@@ -88,7 +95,7 @@
           </button>
           <button 
             @click="submitReport" 
-            :disabled="form.processing || !form.reason || form.proof_images.length === 0" 
+            :disabled="form.processing || !form.reason || (isImageRequired && form.proof_images.length === 0)" 
             class="px-5 py-2 text-sm font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed focus:outline-none transition shadow-sm flex items-center gap-2"
           >
             <svg v-if="form.processing" class="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -102,19 +109,42 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, watch, computed } from 'vue';
 import { useForm } from '@inertiajs/vue3';
 
 const props = defineProps({
     show: Boolean,
     targetUser: Object,
     targetPost: Object,
-    targetClaim: Object
+    targetClaim: Object,
+    targetCampaign: Object,
+    targetDonation: Object
 });
 
 const emit = defineEmits(['close', 'success']);
 
-const reasons = [
+const isImageRequired = computed(() => !!props.targetClaim || !!props.targetDonation);
+
+const reportContext = computed(() => {
+    if (props.targetClaim) {
+        return 'transaction';
+    } else if (props.targetCampaign || props.targetDonation) {
+        return 'campaign';
+    } else {
+        return 'post';
+    }
+});
+
+const reasonsPost = [
+    'Hình ảnh giả mạo / Lấy từ mạng',
+    'Spam / Quảng cáo bán hàng',
+    'Nội dung phản cảm / Thô tục',
+    'Bài đăng không phải là thực phẩm',
+    'Dấu hiệu lừa đảo / Chứa link lạ',
+    'Lý do khác'
+];
+
+const reasonsTransaction = [
     'Địa chỉ giả mạo / Không tồn tại',
     'Không liên lạc được với người cho',
     'Thực phẩm bị hỏng / Hết hạn / Không như mô tả',
@@ -123,10 +153,27 @@ const reasons = [
     'Lý do khác'
 ];
 
+const reasonsCampaign = [
+    'Giả mạo tổ chức / Cá nhân uy tín',
+    'Kêu gọi chuyển tiền mặt / Sai mục đích',
+    'Dấu hiệu trục lợi / Thông tin sai sự thật',
+    'Nhận hàng nhưng bặt vô âm tín (Không xác nhận đơn)',
+    'Nội dung độc hại / Phản cảm',
+    'Lý do khác'
+];
+
+const currentReasons = computed(() => {
+    if (reportContext.value === 'transaction') return reasonsTransaction;
+    if (reportContext.value === 'campaign') return reasonsCampaign;
+    return reasonsPost;
+});
+
 const form = useForm({
     reported_user_id: '',
     food_post_id: '',
     food_claim_id: '',
+    campaign_id: '',
+    campaign_donation_id: '',
     reason: '',
     details: '',
     proof_images: [],
@@ -145,6 +192,8 @@ watch(() => props.show, (newVal) => {
         if (props.targetUser) form.reported_user_id = props.targetUser.id;
         if (props.targetPost) form.food_post_id = props.targetPost.id;
         if (props.targetClaim) form.food_claim_id = props.targetClaim.id;
+        if (props.targetCampaign) form.campaign_id = props.targetCampaign.id;
+        if (props.targetDonation) form.campaign_donation_id = props.targetDonation.id;
     }
 });
 
@@ -193,7 +242,7 @@ const close = () => {
 };
 
 const submitReport = () => {
-    if (!form.reason || form.proof_images.length === 0) return;
+    if (!form.reason || (isImageRequired.value && form.proof_images.length === 0)) return;
     
     form.post(route('reports.store'), {
         preserveScroll: true,

@@ -3,17 +3,22 @@ import { ref, onMounted, watch, computed, onUnmounted } from 'vue';
 import { Head, Link, usePage, router, useForm } from '@inertiajs/vue3';
 import ToastMessage from '@/Components/ToastMessage.vue';
 import ReportModal from '@/Components/ReportModal.vue';
+import axios from 'axios';
 
 const showReportModal = ref(false);
 const reportTargetUser = ref(null);
 const reportTargetPost = ref(null);
 const reportTargetClaim = ref(null);
+const reportTargetCampaign = ref(null);
+const reportTargetDonation = ref(null);
 
-const openReportModal = (user, post, claim = null) => {
-    console.log("Opening report modal with:", { user, post, claim });
+const openReportModal = (user, post = null, claim = null, campaign = null, donation = null) => {
+    console.log("Opening report modal with:", { user, post, claim, campaign, donation });
     reportTargetUser.value = user;
     reportTargetPost.value = post;
     reportTargetClaim.value = claim;
+    reportTargetCampaign.value = campaign;
+    reportTargetDonation.value = donation;
     showReportModal.value = true;
 };
 
@@ -22,6 +27,8 @@ const closeReportModal = () => {
     reportTargetUser.value = null;
     reportTargetPost.value = null;
     reportTargetClaim.value = null;
+    reportTargetCampaign.value = null;
+    reportTargetDonation.value = null;
 };
 
 const props = defineProps({
@@ -88,11 +95,15 @@ const dismissNotification = (claimId, status) => {
 
 const handleDbNotificationClick = (notification) => {
     isNotificationOpen.value = false;
-    router.post(route('notifications.read', notification.id), {}, {
-        preserveScroll: true,
-        onSuccess: () => {
-            if (notification.url) {
-                router.visit(notification.url);
+    // Sử dụng axios để tránh hiển thị thanh loading (progress bar) của Inertia
+    axios.post(route('notifications.read', notification.id)).then(() => {
+        if (notification.url) {
+            router.visit(notification.url);
+        } else {
+            // Remove notification from inertia props manually without reloading page
+            const index = usePage().props.auth.notifications.findIndex(n => n.id === notification.id);
+            if (index !== -1) {
+                usePage().props.auth.notifications.splice(index, 1);
             }
         }
     });
@@ -260,6 +271,14 @@ const receiverCancelReasons = [
     'Lý do cá nhân khác'
 ];
 
+const donorCancelReasons = [
+    'Đổi phương thức giao thực phẩm',
+    'Bận đột xuất không đến được',
+    'Cho nhầm số lượng / vật phẩm',
+    'Đã tìm được nguồn hỗ trợ khác',
+    'Lý do cá nhân khác'
+];
+
 const giverCancelReasons = [
     'Thực phẩm đã hỏng/hết hạn thực tế',
     'Hết hàng/Số lượng thực tế không đủ',
@@ -354,13 +373,22 @@ const submitGiverCancel = () => {
     }
 };
 
-const handleGetDirections = (claim) => {
-    if (!claim.food_post || !claim.food_post.latitude || !claim.food_post.longitude) {
-        alert('Không tìm thấy tọa độ định vị của bài viết thực phẩm này.');
+const handleGetDirections = (item) => {
+    let lat, lng;
+    if (item.food_post) { // is a claim
+        lat = item.food_post.latitude;
+        lng = item.food_post.longitude;
+    } else if (item.campaign) { // is a donation group
+        lat = item.campaign.latitude;
+        lng = item.campaign.longitude;
+    }
+    
+    if (!lat || !lng) {
+        alert('Không tìm thấy tọa độ định vị của địa điểm này.');
         return;
     }
     const origin = `${userLat.value},${userLng.value}`;
-    const destination = `${claim.food_post.latitude},${claim.food_post.longitude}`;
+    const destination = `${lat},${lng}`;
     const url = `https://www.google.com/maps/dir/?api=1&origin=${origin}&destination=${destination}&travelmode=driving`;
     window.open(url, '_blank');
 };
@@ -570,12 +598,37 @@ const submitShipperForm = () => {
     }
 };
 
-const cancelDonation = (donationCode) => {
-    if (confirm('Bạn có chắc chắn muốn hủy đơn quyên góp này không?')) {
-        router.post(route('donations.cancel', donationCode), {}, {
-            preserveScroll: true
-        });
-    }
+const showCancelDonationModal = ref(false);
+const selectedCancelDonationCode = ref(null);
+const selectedCancelDonationTime = ref(null);
+const isCancelDonationProcessing = ref(false);
+const cancelDonationForm = ref({
+    reason: 'Thay đổi ý định'
+});
+
+const openCancelDonationModal = (donationCode, createdAt) => {
+    selectedCancelDonationCode.value = donationCode;
+    selectedCancelDonationTime.value = new Date(createdAt);
+    cancelDonationForm.value.reason = 'Thay đổi ý định';
+    showCancelDonationModal.value = true;
+};
+
+const submitCancelDonation = () => {
+    if (!selectedCancelDonationCode.value) return;
+    isCancelDonationProcessing.value = true;
+    router.post(route('donations.cancel', selectedCancelDonationCode.value), {
+        reason: cancelDonationForm.value.reason
+    }, {
+        preserveScroll: true,
+        preserveState: true,
+        onSuccess: () => {
+            showCancelDonationModal.value = false;
+            selectedCancelDonationCode.value = null;
+        },
+        onFinish: () => {
+            isCancelDonationProcessing.value = false;
+        }
+    });
 };
 
 
@@ -594,6 +647,8 @@ const groupedMyDonations = computed(() => {
                 shipper_name: donation.shipper_name,
                 shipper_license_plate: donation.shipper_license_plate,
                 expires_at: donation.expires_at,
+                created_at: donation.created_at,
+                is_disputed: donation.is_disputed,
                 items: []
             };
         }
@@ -606,6 +661,14 @@ const groupedMyDonations = computed(() => {
     });
     
     return Object.values(groups);
+});
+
+const isSidebarTall = computed(() => {
+    let count = activeClaims.value.length + approvedReceivedClaims.value.length;
+    if (groupedMyDonations.value) {
+        count += groupedMyDonations.value.length;
+    }
+    return count > 3;
 });
 
 const filteredCampaigns = computed(() => {
@@ -1524,7 +1587,7 @@ const submitDonation = () => {
         </div>
 
         <!-- CỘT PHẢI (1/3): Bản đồ Leaflet tương tác -->
-        <div class="space-y-6 lg:sticky lg:top-24 lg:self-start">
+        <div :class="isSidebarTall ? 'lg:sticky lg:bottom-6 lg:self-end' : 'lg:sticky lg:top-24 lg:self-start'" class="space-y-6 flex flex-col">
           <!-- Bản đồ định vị lân cận -->
           <div class="bg-white border border-gray-100 rounded-3xl p-5 shadow-sm space-y-3 flex flex-col justify-between h-auto lg:h-[350px]">
             <div class="flex justify-between items-center">
@@ -1548,7 +1611,7 @@ const submitDonation = () => {
               Không có giao dịch nào đang xử lý.
             </div>
             
-            <div v-else class="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+            <div v-else class="space-y-4 pr-1">
               <!-- PHẦN 1: BÀI NHẬN (Yêu cầu bạn gửi đi xin người khác) -->
               <div v-if="activeClaims.length > 0" class="space-y-2">
                 <div class="text-[10px] font-bold text-emerald-700 tracking-wider uppercase mb-1 flex items-center gap-1">
@@ -1768,14 +1831,34 @@ const submitDonation = () => {
                         </div>
                     </div>
                   </div>
+
+                  <div class="bg-gray-50 p-2 rounded-xl text-gray-600 text-[11px] space-y-0.5 text-left mt-1.5 border border-gray-100">
+                    <p>👤 <b>Tổ chức:</b> <span class="font-bold text-gray-900">{{ group.campaign?.user?.name }}</span></p>
+                    <p>📞 <b>SĐT liên hệ:</b> <a :href="'tel:' + group.campaign?.user?.phone" class="text-emerald-600 font-bold hover:underline">{{ group.campaign?.user?.phone || 'Chưa cập nhật' }}</a></p>
+                    <p>📍 <b>Điểm tập kết:</b> <span class="font-semibold text-gray-800">{{ group.campaign?.location_details || 'Chưa cập nhật' }}</span></p>
+                    <div class="pt-1.5 border-t border-emerald-100/50 mt-1.5">
+                      <button 
+                        @click="handleGetDirections(group)"
+                        class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1.5 px-3 rounded-lg transition text-center cursor-pointer flex items-center justify-center gap-1 shadow-sm"
+                      >
+                        🗺️ Chỉ đường đến điểm tập kết
+                      </button>
+                    </div>
+                  </div>
                   
-                  <div class="mt-2 pt-2 border-t border-gray-100/50 flex justify-between items-center">
-                      <button @click="openCampaignDetailModal(group.campaign)" class="text-blue-600 hover:text-blue-700 font-semibold underline text-[10px] transition cursor-pointer">
-                          Xem chi tiết chiến dịch
+                  <div class="mt-2 pt-2 border-t border-gray-100/50 flex flex-col gap-2">
+                      <button @click="openCampaignDetailModal(group.campaign)" class="w-full bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-blue-200 transition text-center cursor-pointer shadow-sm flex justify-center items-center gap-1">
+                          📄 Xem chi tiết chiến dịch
                       </button>
-                      <button v-if="group.status === 'pending'" @click="cancelDonation(group.donation_code)" class="text-red-500 hover:text-red-700 font-semibold underline text-[10px] transition cursor-pointer">
-                          Hủy đóng góp
-                      </button>
+                      <div class="flex justify-end gap-2">
+                        <button v-if="!group.is_disputed" @click="openReportModal(group.campaign?.user, null, null, group.campaign, group.items[0])" class="bg-white hover:bg-red-50 text-red-600 font-bold text-[10px] py-1.5 px-3 rounded-lg border border-red-200 hover:border-red-300 transition text-center cursor-pointer shadow-sm flex items-center gap-1">
+                            🚩 Báo cáo
+                        </button>
+                        <button v-if="group.status === 'pending' && !group.is_disputed" @click="openCancelDonationModal(group.donation_code, group.created_at)" class="bg-white hover:bg-red-50 text-red-600 hover:text-red-700 font-bold text-[10px] px-3 py-1.5 rounded-lg border border-gray-200 hover:border-red-100 transition cursor-pointer shadow-sm">
+                            Hủy đóng góp
+                        </button>
+                        <span v-if="group.is_disputed" class="text-red-600 font-bold text-[10px] px-2 py-1 bg-red-50 border border-red-100 rounded-lg w-full text-center">Đang chờ xử lý báo cáo</span>
+                      </div>
                   </div>
                 </div>
               </div>
@@ -1875,9 +1958,12 @@ const submitDonation = () => {
           </div>
         </div>
         
-        <div class="p-4 border-t border-gray-100 shrink-0 bg-gray-50">
-           <button @click="showCampaignDetailModal = false" class="w-full px-4 py-2.5 text-sm font-bold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 shadow-sm transition">
+        <div class="p-4 border-t border-gray-100 shrink-0 bg-gray-50 flex gap-3">
+           <button @click="showCampaignDetailModal = false" class="flex-1 px-4 py-2.5 text-sm font-bold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 shadow-sm transition">
                Đóng
+           </button>
+           <button v-if="$page.props.auth.user && $page.props.auth.user.id !== selectedCampaignDetail.user_id" @click="openReportModal(selectedCampaignDetail.user, null, null, selectedCampaignDetail)" class="px-3 py-2 text-sm font-bold text-gray-500 hover:text-red-600 bg-white border border-gray-200 rounded-xl hover:bg-red-50 transition shadow-sm flex items-center justify-center gap-1 shrink-0" title="Báo cáo chiến dịch">
+              🚩 Báo cáo
            </button>
         </div>
       </div>
@@ -1915,6 +2001,48 @@ const submitDonation = () => {
           </form>
         </div>
       </div>
+    </div>
+    
+    <!-- MODAL HỦY ĐÓNG GÓP -->
+    <div 
+      v-if="showCancelDonationModal" 
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+    >
+        <div class="bg-white rounded-3xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95 duration-200 border border-gray-100">
+            <h3 class="text-lg font-extrabold text-gray-900 mb-2">Hủy đóng góp</h3>
+            
+            <div v-if="selectedCancelDonationTime && (new Date() - selectedCancelDonationTime) / 60000 <= 10" class="mb-4 bg-emerald-50 text-emerald-700 text-xs p-3 rounded-xl border border-emerald-100 flex items-start gap-2">
+                <span class="shrink-0 mt-0.5">✅</span>
+                <p>Bạn đang hủy đơn trong 10 phút đầu tiên. Bạn sẽ <strong>không bị trừ điểm</strong> uy tín.</p>
+            </div>
+            <div v-else class="mb-4 bg-red-50 text-red-700 text-xs p-3 rounded-xl border border-red-100 flex items-start gap-2">
+                <span class="shrink-0 mt-0.5">⚠️</span>
+                <p><strong>CẢNH BÁO:</strong> Đã quá 10 phút kể từ lúc đăng ký. Việc hủy đơn lúc này sẽ khiến bạn bị <strong>trừ 10 điểm</strong> uy tín.</p>
+            </div>
+
+            <p class="text-xs text-gray-500 mb-4">Vui lòng chọn lý do hủy để chúng tôi hỗ trợ tốt hơn:</p>
+            
+            <div class="space-y-2 mb-6">
+                <div 
+                    v-for="opt in donorCancelReasons" 
+                    :key="opt"
+                    @click="cancelDonationForm.reason = opt"
+                    class="p-3.5 rounded-2xl border text-xs font-semibold transition cursor-pointer flex items-center justify-between"
+                    :class="cancelDonationForm.reason === opt ? 'border-red-500 bg-red-50/50 text-red-700 shadow-sm shadow-red-100' : 'border-gray-100 bg-gray-50 hover:bg-gray-100 text-gray-700'"
+                >
+                    <span>{{ opt }}</span>
+                    <span v-if="cancelDonationForm.reason === opt" class="text-red-500 font-bold">✓</span>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-3">
+                <button @click="showCancelDonationModal = false" :disabled="isCancelDonationProcessing" class="flex-1 px-4 py-2.5 text-xs font-bold text-gray-600 bg-gray-100 rounded-xl hover:bg-gray-200 transition disabled:opacity-50">Đóng</button>
+                <button @click="submitCancelDonation" :disabled="isCancelDonationProcessing" class="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 rounded-xl hover:bg-red-700 shadow-md shadow-red-500/30 transition disabled:opacity-50 flex justify-center items-center gap-2">
+                  <svg v-if="isCancelDonationProcessing" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                  <span>{{ isCancelDonationProcessing ? 'Đang xử lý...' : 'Xác nhận Hủy' }}</span>
+                </button>
+            </div>
+        </div>
     </div>
 
     <!-- MODAL GỬI YÊU CẦU NHẬN THỰC PHẨM LẺ -->
@@ -2210,6 +2338,8 @@ const submitDonation = () => {
         :target-user="reportTargetUser"
         :target-post="reportTargetPost"
         :target-claim="reportTargetClaim"
+        :target-campaign="reportTargetCampaign"
+        :target-donation="reportTargetDonation"
         @close="closeReportModal"
         @success="fetchNearbyFood"
     />

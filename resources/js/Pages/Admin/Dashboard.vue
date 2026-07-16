@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import AdminCharts from './Partials/AdminCharts.vue';
 import ToastMessage from '@/Components/ToastMessage.vue';
@@ -18,6 +18,7 @@ const props = defineProps({
 
 // State quản lý Tab đang hiển thị tích cực
 const activeTab = ref('overview'); 
+const activeReportTab = ref('personal');
 
 // State quản lý bộ lọc khoảng thời gian
 const filterPeriod = ref(new URLSearchParams(window.location.search).get('period') || '7days');
@@ -70,6 +71,69 @@ const selectedCampaign = ref(null);
 // Lấy danh sách các Tổ chức từ thiện đang chờ duyệt
 const pendingCharities = computed(() => {
     return props.users.filter(u => u.role === 'charity' && u.status === 'pending');
+});
+
+const searchReportQuery = ref('');
+
+const removeAccents = (str) => {
+    return str ? str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase() : '';
+};
+
+const personalReports = computed(() => {
+    let reports = props.reports?.filter(r => r.reported_user && r.reported_user.role !== 'charity') || [];
+    if (searchReportQuery.value) {
+        const query = removeAccents(searchReportQuery.value);
+        reports = reports.filter(r => 
+            removeAccents(r.reporter?.name).includes(query) ||
+            removeAccents(r.reported_user?.name).includes(query) ||
+            removeAccents(r.reason).includes(query) ||
+            removeAccents(r.details).includes(query)
+        );
+    }
+    return reports;
+});
+
+const charityReports = computed(() => {
+    let reports = props.reports?.filter(r => r.reported_user && r.reported_user.role === 'charity') || [];
+    if (searchReportQuery.value) {
+        const query = removeAccents(searchReportQuery.value);
+        reports = reports.filter(r => 
+            removeAccents(r.reporter?.name).includes(query) ||
+            removeAccents(r.reported_user?.name).includes(query) ||
+            removeAccents(r.reason).includes(query) ||
+            removeAccents(r.details).includes(query)
+        );
+    }
+    return reports;
+});
+
+watch(searchReportQuery, () => {
+    if (searchReportQuery.value) {
+        // Nếu đang ở tab cá nhân nhưng không có kết quả, trong khi tab tổ chức có kết quả
+        if (activeReportTab.value === 'personal' && personalReports.value.length === 0 && charityReports.value.length > 0) {
+            activeReportTab.value = 'charity';
+        } 
+        // Ngược lại, nếu đang ở tab tổ chức nhưng không có kết quả, trong khi tab cá nhân có kết quả
+        else if (activeReportTab.value === 'charity' && charityReports.value.length === 0 && personalReports.value.length > 0) {
+            activeReportTab.value = 'personal';
+        }
+    }
+});
+
+const searchQuery = ref('');
+
+const filteredUsers = computed(() => {
+    let result = props.users.filter(u => !(u.role === 'charity' && u.status === 'pending'));
+    
+    if (searchQuery.value) {
+        const query = searchQuery.value.toLowerCase();
+        result = result.filter(u => 
+            u.name.toLowerCase().includes(query) || 
+            u.email.toLowerCase().includes(query) ||
+            (u.phone && u.phone.toLowerCase().includes(query))
+        );
+    }
+    return result;
 });
 
 // Tổng số lượng thông báo
@@ -144,6 +208,11 @@ const getStatusLabel = (status) => {
 };
 
 const selectedReport = ref(null);
+
+const getPendingReportCountForCampaign = (campaignId) => {
+    if (!campaignId || !props.reports) return 0;
+    return props.reports.filter(r => r.campaign_id === campaignId && r.status === 'pending').length;
+};
 
 const resolveReport = (reportId, action) => {
     const actionLabels = {
@@ -285,19 +354,19 @@ const resolveReport = (reportId, action) => {
                     🛡️ Kiểm duyệt Nội dung
                 </button>
                 <button 
-                    @click="activeTab = 'logs'" 
-                    :class="activeTab === 'logs' ? 'bg-slate-900 text-white' : 'text-gray-600 hover:bg-gray-100'"
-                    class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
-                >
-                    📜 Nhật ký Hệ thống
-                </button>
-                <button 
                     @click="activeTab = 'reports'" 
                     :class="activeTab === 'reports' ? 'bg-slate-900 text-white' : 'text-gray-600 hover:bg-gray-100'"
                     class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 flex items-center gap-1"
                 >
                     🚩 Báo cáo vi phạm
                     <span v-if="reports?.filter(r => r.status === 'pending').length > 0" class="bg-red-500 text-white text-[10px] px-1.5 py-0.5 rounded-full">{{ reports?.filter(r => r.status === 'pending').length }}</span>
+                </button>
+                <button 
+                    @click="activeTab = 'logs'" 
+                    :class="activeTab === 'logs' ? 'bg-slate-900 text-white' : 'text-gray-600 hover:bg-gray-100'"
+                    class="px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200"
+                >
+                    📜 Nhật ký Hệ thống
                 </button>
             </div>
 
@@ -353,7 +422,84 @@ const resolveReport = (reportId, action) => {
                     </div>
                 </div>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-5">
+                <!-- ⚡ CẦN XỬ LÝ GẤP (Chỉ hiện khi có việc) -->
+                <div v-if="(pendingCampaigns?.length > 0) || (users?.filter(u => u.trust_score < 40).length > 0) || (stats?.reports_breakdown?.pending_count > 0)" class="mb-4">
+                    <h3 class="text-sm font-bold text-gray-900 mb-3 flex items-center gap-2">
+                        <span class="relative flex h-3 w-3">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                        </span>
+                        Cần xử lý gấp
+                    </h3>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                        
+                        <!-- Cảnh báo 1: Báo cáo vi phạm -->
+                        <div v-if="stats?.reports_breakdown?.pending_count > 0" class="bg-red-50 border border-red-200 rounded-2xl p-4 shadow-sm relative overflow-hidden group">
+                            <div class="absolute top-0 right-0 p-2 opacity-10 group-hover:scale-110 transition duration-300">
+                                <svg class="w-16 h-16 text-red-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            <div class="relative z-10 flex justify-between items-start">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="bg-red-100 p-2 rounded-lg border border-red-200 shadow-inner">
+                                            <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                        </div>
+                                        <h4 class="text-sm font-bold text-gray-900">Báo cáo vi phạm</h4>
+                                    </div>
+                                    <p class="text-[11px] text-gray-600 mt-2 leading-relaxed max-w-[80%]">Có <span class="font-bold text-red-600">{{ stats?.reports_breakdown?.pending_count }}</span> báo cáo về người dùng/bài đăng cần được giải quyết.</p>
+                                </div>
+                                <button @click="activeTab = 'reports'" class="bg-white border border-red-200 hover:bg-red-600 hover:text-white text-red-700 text-xs font-bold py-1.5 px-3 rounded-lg transition shadow-sm whitespace-nowrap">
+                                    Xử lý
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Cảnh báo 2: Tài khoản uy tín thấp -->
+                        <div v-if="users?.filter(u => u.trust_score < 40).length > 0" class="bg-orange-50 border border-orange-200 rounded-2xl p-4 shadow-sm relative overflow-hidden group">
+                            <div class="absolute top-0 right-0 p-2 opacity-10 group-hover:scale-110 transition duration-300">
+                                <svg class="w-16 h-16 text-orange-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 9a3 3 0 100-6 3 3 0 000 6zm-7 9a7 7 0 1114 0H3z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            <div class="relative z-10 flex justify-between items-start">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="bg-orange-100 p-2 rounded-lg border border-orange-200 shadow-inner">
+                                            <svg class="w-4 h-4 text-orange-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                                        </div>
+                                        <h4 class="text-sm font-bold text-gray-900">Tài khoản xấu</h4>
+                                    </div>
+                                    <p class="text-[11px] text-gray-600 mt-2 leading-relaxed max-w-[80%]">Có <span class="font-bold text-orange-600">{{ users?.filter(u => u.trust_score < 40).length }}</span> tài khoản uy tín thấp (< 40) có dấu hiệu spam.</p>
+                                </div>
+                                <button @click="activeTab = 'users'" class="bg-white border border-orange-200 hover:bg-orange-600 hover:text-white text-orange-700 text-xs font-bold py-1.5 px-3 rounded-lg transition shadow-sm whitespace-nowrap">
+                                    Xem
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Cảnh báo 3: Chiến dịch chờ duyệt -->
+                        <div v-if="pendingCampaigns?.length > 0" class="bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm relative overflow-hidden group">
+                            <div class="absolute top-0 right-0 p-2 opacity-10 group-hover:scale-110 transition duration-300">
+                                <svg class="w-16 h-16 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z"></path><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd"></path></svg>
+                            </div>
+                            <div class="relative z-10 flex justify-between items-start">
+                                <div>
+                                    <div class="flex items-center gap-2">
+                                        <div class="bg-amber-100 p-2 rounded-lg border border-amber-200 shadow-inner">
+                                            <svg class="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                        </div>
+                                        <h4 class="text-sm font-bold text-gray-900">Chiến dịch mới</h4>
+                                    </div>
+                                    <p class="text-[11px] text-gray-600 mt-2 leading-relaxed max-w-[80%]">Có <span class="font-bold text-amber-600">{{ pendingCampaigns?.length }}</span> chiến dịch quyên góp đang chờ BQT phê duyệt.</p>
+                                </div>
+                                <button @click="activeTab = 'moderation'" class="bg-white border border-amber-200 hover:bg-amber-600 hover:text-white text-amber-700 text-xs font-bold py-1.5 px-3 rounded-lg transition shadow-sm whitespace-nowrap">
+                                    Duyệt
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-5">
                     <!-- Box 1: Tổng người dùng -->
                     <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between">
                         <div class="flex items-center justify-between">
@@ -435,16 +581,31 @@ const resolveReport = (reportId, action) => {
                             </div>
                         </div>
                     </div>
+
+                    <!-- Box 6: Báo cáo vi phạm -->
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-200 flex flex-col justify-between cursor-pointer hover:border-red-200 transition" @click="activeTab = 'reports'">
+                        <div class="flex items-center justify-between">
+                            <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">Báo cáo vi phạm</span>
+                            <div class="p-2 bg-red-50 rounded-lg">
+                                <svg class="w-4 h-4 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                            </div>
+                        </div>
+                        <div class="mt-4">
+                            <span class="text-3xl font-bold text-gray-900">{{ stats?.reports_breakdown?.total ?? 0 }}</span>
+                        </div>
+                        <div class="mt-3 text-[10px] text-gray-400">
+                            <span class="text-red-600 font-semibold">{{ stats?.reports_breakdown?.pending_count ?? 0 }}</span> đang chờ xử lý
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Biểu đồ -->
                 <AdminCharts :chart-data="chartData" />
 
-                <!-- Nửa dưới: Bảng nhật ký & Khối cảnh báo -->
-                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-8">
-                    
-                    <!-- Bảng Nhật ký hoạt động gần đây (Chiếm 2 phần) -->
-                    <div class="lg:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
+                <!-- Nửa dưới: Bảng nhật ký -->
+                <div class="mt-8">
+                    <!-- Bảng Nhật ký hoạt động gần đây (Full width) -->
+                    <div class="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden flex flex-col">
                         <div class="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
                             <div>
                                 <h3 class="text-sm font-bold text-gray-900">📋 Nhật ký hoạt động gần đây</h3>
@@ -474,7 +635,7 @@ const resolveReport = (reportId, action) => {
                                             </span>
                                         </td>
                                         <td class="px-5 py-3 text-xs text-gray-800">
-                                            <div class="line-clamp-2 max-w-[250px]" :title="log.details">{{ log.details }}</div>
+                                            <div class="line-clamp-2 max-w-[500px]" :title="log.details">{{ log.details }}</div>
                                         </td>
                                         <td class="px-5 py-3 whitespace-nowrap text-xs font-semibold text-gray-700">
                                             {{ log.status }}
@@ -494,126 +655,164 @@ const resolveReport = (reportId, action) => {
                             </table>
                         </div>
                     </div>
-
-                    <!-- Khối cảnh báo cần xử lý (Chiếm 1 phần) -->
-                    <div class="lg:col-span-1 space-y-5">
-                        <h3 class="text-sm font-bold text-gray-900 mb-2 border-b border-gray-200 pb-2">⚡ Cần xử lý gấp</h3>
-                        
-                        <!-- Cảnh báo 1: Bài viết chờ duyệt -->
-                        <div class="bg-amber-50 border border-amber-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
-                            <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition duration-300">
-                                <svg class="w-16 h-16 text-amber-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
-                            </div>
-                            <div class="relative z-10">
-                                <div class="flex justify-between items-start">
-                                    <div class="bg-amber-100 p-2.5 rounded-xl border border-amber-200 shadow-inner">
-                                        <svg class="w-5 h-5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                    </div>
-                                    <span class="bg-amber-100 border border-amber-200 text-amber-800 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">{{ pendingCampaigns?.length ?? 0 }} Mới</span>
-                                </div>
-                                <div class="mt-4">
-                                    <h4 class="text-sm font-bold text-gray-900">Chiến dịch chờ duyệt</h4>
-                                    <p class="text-[11px] text-gray-600 mt-1 leading-relaxed">Có các chiến dịch quyên góp lớn cần BQT kiểm tra và xác thực tính hợp pháp.</p>
-                                </div>
-                                <button @click="activeTab = 'moderation'" class="mt-4 w-full bg-white border border-amber-200 hover:bg-amber-600 hover:text-white text-amber-700 text-xs font-bold py-2.5 rounded-xl transition shadow-sm">
-                                    Đến trang Kiểm duyệt
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- Cảnh báo 2: Tài khoản uy tín thấp -->
-                        <div class="bg-red-50 border border-red-200 rounded-2xl p-5 shadow-sm relative overflow-hidden group">
-                            <div class="absolute top-0 right-0 p-3 opacity-10 group-hover:scale-110 transition duration-300">
-                                <svg class="w-16 h-16 text-red-600" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
-                            </div>
-                            <div class="relative z-10">
-                                <div class="flex justify-between items-start">
-                                    <div class="bg-red-100 p-2.5 rounded-xl border border-red-200 shadow-inner">
-                                        <svg class="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
-                                    </div>
-                                    <span class="bg-red-100 border border-red-200 text-red-800 text-[10px] font-bold px-2 py-0.5 rounded-md shadow-sm">{{ users?.filter(u => u.trust_score < 40).length ?? 0 }} Vi phạm</span>
-                                </div>
-                                <div class="mt-4">
-                                    <h4 class="text-sm font-bold text-gray-900">Tài khoản uy tín kém (< 40)</h4>
-                                    <p class="text-[11px] text-gray-600 mt-1 leading-relaxed">Phát hiện người dùng có dấu hiệu spam, bom hàng. Cần xem xét khóa tài khoản ngay lập tức.</p>
-                                </div>
-                                <button @click="activeTab = 'users'" class="mt-4 w-full bg-white border border-red-200 hover:bg-red-600 hover:text-white text-red-700 text-xs font-bold py-2.5 rounded-xl transition shadow-sm">
-                                    Xem danh sách vi phạm
-                                </button>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             </div>
 
-            <div v-if="activeTab === 'users'" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in">
-                <div class="p-6 border-b border-gray-100">
-                    <h2 class="text-lg font-bold text-gray-950">👥 Danh sách người dùng & Phân cấp vai trò</h2>
-                    <p class="text-xs text-gray-500 mt-1">Quản lý trạng thái xác minh, xử lý khóa tài khoản vi phạm hoặc duyệt hồ sơ Mái ấm.</p>
+            <div v-if="activeTab === 'users'" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in flex flex-col gap-6">
+                
+                <!-- Bảng 1: Tổ chức chờ duyệt -->
+                <div v-if="pendingCharities.length > 0" class="border-b border-gray-100 pb-6">
+                    <div class="p-6 pb-2 border-b border-gray-100 bg-amber-50/30">
+                        <h2 class="text-lg font-bold text-amber-800 flex items-center gap-2">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                            Tổ chức đang chờ duyệt
+                        </h2>
+                        <p class="text-xs text-amber-700 mt-1">Danh sách các tổ chức từ thiện cần xác thực hồ sơ pháp lý.</p>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-amber-100/50 text-amber-800 text-xs font-bold uppercase tracking-wider border-b border-amber-100">
+                                <tr>
+                                    <th class="px-6 py-4">Tên tổ chức</th>
+                                    <th class="px-6 py-4">Email / SĐT</th>
+                                    <th class="px-6 py-4">Vai trò</th>
+                                    <th class="px-6 py-4 text-right">Hành động điều khiển</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-amber-50">
+                                <tr v-for="user in pendingCharities" :key="user.id" class="hover:bg-amber-50/50 transition">
+                                    <td class="px-6 py-4 font-semibold text-gray-900">{{ user.name }}</td>
+                                    <td class="px-6 py-4">
+                                        <div class="text-gray-900">{{ user.email }}</div>
+                                        <div class="text-xs text-gray-400">{{ user.phone ?? 'Chưa cập nhật' }}</div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span class="bg-purple-50 text-purple-700 text-xs font-bold px-2.5 py-1 rounded-md">
+                                            {{ getRoleLabel(user.role) }}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 text-right space-x-2">
+                                        <button 
+                                            @click="selectedCharity = user"
+                                            class="text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg shadow-sm transition"
+                                        >
+                                            📄 Duyệt hồ sơ pháp lý
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
-                            <tr>
-                                <th class="px-6 py-4">Tên chủ tài khoản</th>
-                                <th class="px-6 py-4">Email / SĐT</th>
-                                <th class="px-6 py-4">Vai trò</th>
-                                <th class="px-6 py-4">Trạng thái</th>
-                                <th class="px-6 py-4 text-right">Hành động điều khiển</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            <tr v-for="user in users" :key="user.id" class="hover:bg-gray-50/70 transition">
-                                <td class="px-6 py-4 font-semibold text-gray-900">{{ user.name }}</td>
-                                <td class="px-6 py-4">
-                                    <div class="text-gray-900">{{ user.email }}</div>
-                                    <div class="text-xs text-gray-400">{{ user.phone ?? 'Chưa cập nhật' }}</div>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span :class="{
-                                        'bg-purple-50 text-purple-700': user.role === 'charity',
-                                        'bg-blue-50 text-blue-700': user.role === 'personal',
-                                        'bg-red-50 text-red-700': user.role === 'admin'
-                                    }" class="text-xs font-bold px-2.5 py-1 rounded-md">
-                                        {{ getRoleLabel(user.role) }}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span :class="{
-                                        'bg-emerald-50 text-emerald-700': user.status === 'verified',
-                                        'bg-amber-50 text-amber-700': user.status === 'pending',
-                                        'bg-red-50 text-red-700': user.status === 'banned' || user.status === 'rejected'
-                                    }" class="text-xs font-bold px-2.5 py-1 rounded-md">
-                                        {{ getStatusLabel(user.status) }}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-right space-x-2">
-                                    <button 
-                                        v-if="user.role === 'charity' && user.status === 'pending'"
-                                        @click="selectedCharity = user"
-                                        class="text-xs font-semibold bg-amber-500 hover:bg-amber-600 text-white px-3 py-1.5 rounded-lg shadow-sm transition"
-                                    >
-                                        📄 Duyệt hồ sơ pháp lý
-                                    </button>
-                                    
-                                    <button 
-                                        v-if="user.role !== 'admin'"
-                                        @click="toggleUserStatus(user.id, user.status)"
-                                        :class="user.status === 'banned' ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-red-50 text-red-600 hover:bg-red-100'"
-                                        class="text-xs font-bold px-3 py-1.5 rounded-lg transition"
-                                    >
-                                        {{ user.status === 'banned' ? 'Mở khóa' : 'Khóa tài khoản' }}
-                                    </button>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+
+                <!-- Bảng 2: Tất cả tài khoản -->
+                <div>
+                    <div class="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <h2 class="text-lg font-bold text-gray-950">👥 Tất cả tài khoản hệ thống</h2>
+                            <p class="text-xs text-gray-500 mt-1">Danh sách người dùng đã đăng ký. Bạn có thể tìm kiếm và khóa tài khoản vi phạm.</p>
+                        </div>
+                        
+                        <!-- Thanh tìm kiếm -->
+                        <div class="relative w-full sm:w-64">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                            <input 
+                                type="text" 
+                                v-model="searchQuery" 
+                                placeholder="Tìm tên, email, sđt..." 
+                                class="w-full bg-gray-50 border border-gray-200 text-gray-900 text-xs rounded-xl focus:ring-emerald-500 focus:border-emerald-500 block pl-9 pr-3 py-2.5 outline-none transition"
+                            />
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-left text-sm">
+                            <thead class="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
+                                <tr>
+                                    <th class="px-6 py-4">Tên chủ tài khoản</th>
+                                    <th class="px-6 py-4">Email / SĐT</th>
+                                    <th class="px-6 py-4">Vai trò</th>
+                                    <th class="px-6 py-4">Trạng thái</th>
+                                    <th class="px-6 py-4 text-right">Hành động điều khiển</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-gray-100">
+                                <tr v-if="filteredUsers.length === 0">
+                                    <td colspan="5" class="px-6 py-8 text-center text-gray-400 text-sm">
+                                        Không tìm thấy tài khoản nào phù hợp với từ khóa "{{ searchQuery }}".
+                                    </td>
+                                </tr>
+                                <tr v-for="user in filteredUsers" :key="user.id" class="hover:bg-gray-50/70 transition">
+                                    <td class="px-6 py-4 font-semibold text-gray-900">{{ user.name }}</td>
+                                    <td class="px-6 py-4">
+                                        <div class="text-gray-900">{{ user.email }}</div>
+                                        <div class="text-xs text-gray-400">{{ user.phone ?? 'Chưa cập nhật' }}</div>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span :class="{
+                                            'bg-purple-50 text-purple-700': user.role === 'charity',
+                                            'bg-blue-50 text-blue-700': user.role === 'personal',
+                                            'bg-red-50 text-red-700': user.role === 'admin'
+                                        }" class="text-xs font-bold px-2.5 py-1 rounded-md">
+                                            {{ getRoleLabel(user.role) }}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4">
+                                        <span :class="{
+                                            'bg-emerald-50 text-emerald-700': user.status === 'verified',
+                                            'bg-amber-50 text-amber-700': user.status === 'pending',
+                                            'bg-red-50 text-red-700': user.status === 'banned' || user.status === 'rejected'
+                                        }" class="text-xs font-bold px-2.5 py-1 rounded-md">
+                                            {{ getStatusLabel(user.status) }}
+                                        </span>
+                                    </td>
+                                    <td class="px-6 py-4 text-right space-x-2">
+                                        <button 
+                                            v-if="user.role !== 'admin'"
+                                            @click="toggleUserStatus(user.id, user.status)"
+                                            :class="user.status === 'banned' ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100' : 'bg-red-50 text-red-600 hover:bg-red-100'"
+                                            class="text-xs font-bold px-3 py-1.5 rounded-lg transition"
+                                        >
+                                            {{ user.status === 'banned' ? 'Mở khóa' : 'Khóa tài khoản' }}
+                                        </button>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
 
             <div v-if="activeTab === 'moderation'" class="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fade-in">
                 
-                <!-- Cột trái: Chiến dịch chờ duyệt -->
+                <!-- Cột trái: Chiến dịch đã duyệt / Đang hoạt động -->
+                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
+                    <div class="border-b border-gray-100 pb-3">
+                        <h3 class="text-base font-bold text-gray-950 flex items-center gap-2">✅ Chiến dịch đang hoạt động</h3>
+                        <p class="text-xs text-gray-500 mt-0.5">Danh sách các chiến dịch từ thiện đã được Ban quản trị phê duyệt và đang chạy.</p>
+                    </div>
+                    <div v-if="!activeCampaigns || activeCampaigns.length === 0" class="text-sm text-gray-400 py-6 text-center">
+                        Hiện tại không có chiến dịch nào đang hoạt động.
+                    </div>
+                    <div v-else class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                        <div v-for="cam in activeCampaigns" :key="cam.id" class="p-4 bg-emerald-50/30 border border-emerald-100 rounded-xl flex flex-col justify-between space-y-3">
+                            <div>
+                                <h4 class="text-sm font-bold text-gray-950">{{ cam.title }}</h4>
+                                <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ cam.description }}</p>
+                                <div class="mt-2 text-xs text-gray-500 flex justify-between">
+                                    <span><span class="font-semibold text-gray-800">Tổ chức:</span> {{ cam.user?.name }}</span>
+                                </div>
+                            </div>
+                            <div class="flex justify-end space-x-2">
+                                <button @click="selectedCampaign = cam" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition">Xem chi tiết</button>
+                                <button @click="moderateCampaign(cam.id, 'rejected')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-3 py-1.5 rounded-lg transition">Gỡ chiến dịch</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Cột phải: Chiến dịch chờ duyệt -->
                 <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
                     <div class="border-b border-gray-100 pb-3">
                         <h3 class="text-base font-bold text-gray-950 flex items-center gap-2">📋 Chiến dịch chờ duyệt</h3>
@@ -635,32 +834,6 @@ const resolveReport = (reportId, action) => {
                                 <button @click="selectedCampaign = cam" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition">Xem chi tiết</button>
                                 <button @click="moderateCampaign(cam.id, 'active')" class="text-xs bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-3 py-1.5 rounded-lg shadow-sm transition">Duyệt</button>
                                 <button @click="moderateCampaign(cam.id, 'rejected')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-3 py-1.5 rounded-lg transition">Từ chối</button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Cột phải: Chiến dịch đã duyệt / Đang hoạt động -->
-                <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-4">
-                    <div class="border-b border-gray-100 pb-3">
-                        <h3 class="text-base font-bold text-gray-950 flex items-center gap-2">✅ Chiến dịch đang hoạt động</h3>
-                        <p class="text-xs text-gray-500 mt-0.5">Danh sách các chiến dịch từ thiện đã được Ban quản trị phê duyệt và đang chạy.</p>
-                    </div>
-                    <div v-if="!activeCampaigns || activeCampaigns.length === 0" class="text-sm text-gray-400 py-6 text-center">
-                        Hiện tại không có chiến dịch nào đang hoạt động.
-                    </div>
-                    <div v-else class="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                        <div v-for="cam in activeCampaigns" :key="cam.id" class="p-4 bg-emerald-50/30 border border-emerald-100 rounded-xl flex flex-col justify-between space-y-3">
-                            <div>
-                                <h4 class="text-sm font-bold text-gray-950">{{ cam.title }}</h4>
-                                <p class="text-xs text-gray-600 mt-1 line-clamp-2">{{ cam.description }}</p>
-                                <div class="mt-2 text-xs text-gray-500 flex justify-between">
-                                    <span><span class="font-semibold text-gray-800">Tổ chức:</span> {{ cam.user?.name }}</span>
-                                </div>
-                            </div>
-                            <div class="flex justify-end space-x-2">
-                                <button @click="selectedCampaign = cam" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold px-3 py-1.5 rounded-lg transition">Xem chi tiết</button>
-                                <button @click="moderateCampaign(cam.id, 'rejected')" class="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-3 py-1.5 rounded-lg transition">Gỡ chiến dịch</button>
                             </div>
                         </div>
                     </div>
@@ -726,68 +899,194 @@ const resolveReport = (reportId, action) => {
             </div>
             <!-- TAB 5: BÁO CÁO VI PHẠM -->
             <div v-if="activeTab === 'reports'" class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden animate-fade-in">
-                <div class="p-6 border-b border-gray-100 flex justify-between items-center flex-wrap gap-2">
+                <div class="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
                         <h2 class="text-lg font-bold text-gray-950">🚩 Quản lý Báo cáo vi phạm</h2>
                         <p class="text-xs text-gray-500 mt-1">Danh sách các báo cáo từ người dùng về thực phẩm hỏng, lừa đảo, hoặc hành vi không chuẩn mực.</p>
                     </div>
+                    
+                    <div class="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                        <!-- CUSTOM DROPDOWN SELECT CHO BÁO CÁO -->
+                        <div class="relative w-full sm:w-auto">
+                            <!-- Nút Trigger -->
+                            <button @click="showFilterDropdown = !showFilterDropdown" 
+                                    class="flex items-center justify-between w-full sm:w-auto bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 text-xs font-bold rounded-xl focus:ring-2 focus:ring-blue-500 block py-2.5 pl-4 pr-3 sm:min-w-[160px] outline-none transition-all duration-200 shadow-sm">
+                                <span>{{ periodLabels[filterPeriod] }}</span>
+                                <svg class="w-4 h-4 text-gray-500 transition-transform duration-200" :class="{ 'rotate-180': showFilterDropdown }" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                            </button>
+                            
+                            <!-- Bảng Menu Dropdown -->
+                            <transition enter-active-class="transition ease-out duration-100" enter-from-class="transform opacity-0 scale-95" enter-to-class="transform opacity-100 scale-100" leave-active-class="transition ease-in duration-75" leave-from-class="transform opacity-100 scale-100" leave-to-class="transform opacity-0 scale-95">
+                                <div v-if="showFilterDropdown" class="absolute right-0 z-50 mt-2 w-[220px] rounded-xl bg-white shadow-xl border border-gray-100 py-1 origin-top-right">
+                                    <button @click="selectPeriod('today')" :class="{'bg-blue-50 text-blue-700': filterPeriod === 'today'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition">Hôm nay</button>
+                                    <button @click="selectPeriod('7days')" :class="{'bg-blue-50 text-blue-700': filterPeriod === '7days'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition">7 ngày qua</button>
+                                    <button @click="selectPeriod('30days')" :class="{'bg-blue-50 text-blue-700': filterPeriod === '30days'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition">30 ngày qua</button>
+                                    <button @click="selectPeriod('all')" :class="{'bg-blue-50 text-blue-700': filterPeriod === 'all'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition">Tất cả thời gian</button>
+                                    <div class="border-t border-gray-100 my-1"></div>
+                                    <button @click="selectPeriod('custom')" :class="{'bg-blue-50 text-blue-700': filterPeriod === 'custom'}" class="w-full text-left px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-blue-50 hover:text-blue-700 transition">Tùy chỉnh khoảng thời gian...</button>
+                                </div>
+                            </transition>
+                        </div>
+                        
+                        <!-- Thanh tìm kiếm báo cáo -->
+                        <div class="relative w-full sm:w-64">
+                            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                            </div>
+                            <input 
+                                type="text" 
+                                v-model="searchReportQuery" 
+                                placeholder="Tìm kiếm báo cáo..." 
+                                class="w-full bg-gray-50 border border-gray-200 text-gray-900 text-xs rounded-xl focus:ring-blue-500 focus:border-blue-500 block pl-9 pr-3 py-2.5 outline-none transition"
+                            />
+                        </div>
+                    </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="w-full text-left text-sm">
-                        <thead class="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
-                            <tr>
-                                <th class="px-6 py-4">Thời gian</th>
-                                <th class="px-6 py-4">Người báo cáo</th>
-                                <th class="px-6 py-4">Người bị báo cáo</th>
-                                <th class="px-6 py-4">Lý do</th>
-                                <th class="px-6 py-4">Trạng thái</th>
-                                <th class="px-6 py-4 text-right">Hành động</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
-                            <tr v-for="report in reports" :key="report.id" class="hover:bg-gray-50/70 transition">
-                                <td class="px-6 py-4 text-xs font-medium text-gray-500 whitespace-nowrap">
-                                    {{ new Date(report.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}
-                                </td>
-                                <td class="px-6 py-4">
-                                    <div class="text-xs text-gray-900 font-semibold" v-if="report.reporter">
-                                        {{ report.reporter.name }}
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <div class="text-xs text-gray-900 font-semibold" v-if="report.reported_user">
-                                        {{ report.reported_user.name }}
-                                    </div>
-                                </td>
-                                <td class="px-6 py-4 text-gray-700 leading-relaxed text-xs">
-                                    <span class="font-bold text-red-600 block mb-0.5">{{ report.reason }}</span>
-                                    <span class="line-clamp-2 text-gray-500" :title="report.details">{{ report.details }}</span>
-                                </td>
-                                <td class="px-6 py-4">
-                                    <span :class="{
-                                        'bg-amber-50 text-amber-700 border-amber-100': report.status === 'pending',
-                                        'bg-emerald-50 text-emerald-700 border-emerald-100': report.status === 'resolved',
-                                        'bg-gray-50 text-gray-700 border-gray-100': report.status === 'dismissed',
-                                    }" class="text-[10px] font-bold px-2 py-0.5 rounded-md border whitespace-nowrap">
-                                        {{ report.status === 'pending' ? 'Chờ xử lý' : (report.status === 'resolved' ? 'Đã xử lý' : 'Đã bỏ qua') }}
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 text-right">
-                                    <button 
-                                        @click="selectedReport = report"
-                                        class="text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 px-3 py-1.5 rounded-lg transition"
-                                    >
-                                        Xem chi tiết
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr v-if="!reports || reports.length === 0">
-                                <td colspan="6" class="text-center py-8 text-sm text-gray-400 italic">
-                                    Chưa có báo cáo vi phạm nào.
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
+                
+                <!-- Khung chọn ngày tùy chỉnh cho Báo cáo (Hiện khi chọn Tùy chỉnh) -->
+                <div v-if="filterPeriod === 'custom'" class="px-6 pb-2 border-b border-gray-100 flex justify-end">
+                    <div class="flex items-center gap-2 bg-gray-50 p-1.5 rounded-lg border border-gray-200 shadow-sm">
+                        <input type="date" v-model="customStartDate" class="bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-md focus:ring-blue-500 focus:border-blue-500 p-1.5 outline-none w-28 sm:w-auto" />
+                        <span class="text-xs text-gray-400 font-medium">-</span>
+                        <input type="date" v-model="customEndDate" class="bg-white border border-gray-200 text-gray-700 text-xs font-medium rounded-md focus:ring-blue-500 focus:border-blue-500 p-1.5 outline-none w-28 sm:w-auto" />
+                        <button @click="updateFilter" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-md text-xs font-bold transition shadow-sm ml-1">Áp dụng</button>
+                    </div>
+                </div>
+                <div class="px-6 flex gap-4 border-b border-gray-100 mt-2">
+                    <button 
+                        @click="activeReportTab = 'personal'"
+                        :class="activeReportTab === 'personal' ? 'border-b-2 border-blue-600 text-blue-700 font-bold' : 'text-gray-500 hover:text-gray-700 font-medium'"
+                        class="px-2 py-3 text-sm transition flex items-center gap-2"
+                    >
+                        <span>👤 Cá nhân / Doanh nghiệp</span>
+                        <span :class="activeReportTab === 'personal' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'" class="text-[10px] px-2 py-0.5 rounded-full">{{ personalReports.length }}</span>
+                    </button>
+                    <button 
+                        @click="activeReportTab = 'charity'"
+                        :class="activeReportTab === 'charity' ? 'border-b-2 border-blue-600 text-blue-700 font-bold' : 'text-gray-500 hover:text-gray-700 font-medium'"
+                        class="px-2 py-3 text-sm transition flex items-center gap-2"
+                    >
+                        <span>🏢 Tổ chức từ thiện</span>
+                        <span :class="activeReportTab === 'charity' ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'" class="text-[10px] px-2 py-0.5 rounded-full">{{ charityReports.length }}</span>
+                    </button>
+                </div>
+
+                <div class="flex flex-col gap-6 p-6 pb-12">
+                    
+                    <!-- Tab 1: Cá nhân / Doanh nghiệp -->
+                    <div v-if="activeReportTab === 'personal'" class="border border-gray-100 rounded-xl overflow-hidden shadow-sm animate-fade-in">
+                        <div class="bg-gray-50/80 px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 class="text-sm font-bold text-gray-800">Báo cáo về Cá nhân / Doanh nghiệp</h3>
+                                <p class="text-[10px] text-gray-500 mt-0.5">Các vi phạm liên quan đến bài đăng tặng thực phẩm, lừa đảo, bom hàng.</p>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-white text-gray-400 text-[10px] font-bold uppercase tracking-wider border-b border-gray-50">
+                                    <tr>
+                                        <th class="px-5 py-3">Thời gian</th>
+                                        <th class="px-5 py-3">Người báo cáo</th>
+                                        <th class="px-5 py-3 text-blue-700">Người bị báo cáo (Cá nhân)</th>
+                                        <th class="px-5 py-3">Lý do & Chi tiết</th>
+                                        <th class="px-5 py-3">Trạng thái</th>
+                                        <th class="px-5 py-3 text-right">Hành động</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-50 bg-white">
+                                    <tr v-for="report in personalReports" :key="report.id" class="hover:bg-gray-50/50 transition">
+                                        <td class="px-5 py-4 text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                                            {{ new Date(report.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <div class="text-[11px] text-gray-700 font-semibold" v-if="report.reporter">{{ report.reporter.name }}</div>
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <div class="text-[11px] text-blue-700 font-bold" v-if="report.reported_user">{{ report.reported_user.name }}</div>
+                                        </td>
+                                        <td class="px-5 py-4 text-gray-700 leading-relaxed text-[11px] max-w-[250px]">
+                                            <span class="font-bold text-red-600 block mb-0.5">{{ report.reason }}</span>
+                                            <span class="line-clamp-2 text-gray-500" :title="report.details">{{ report.details }}</span>
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <span :class="{
+                                                'bg-amber-50 text-amber-700 border-amber-100': report.status === 'pending',
+                                                'bg-emerald-50 text-emerald-700 border-emerald-100': report.status === 'resolved',
+                                                'bg-gray-50 text-gray-700 border-gray-100': report.status === 'dismissed',
+                                            }" class="text-[9px] font-bold px-2 py-0.5 rounded border whitespace-nowrap">
+                                                {{ report.status === 'pending' ? 'Chờ xử lý' : (report.status === 'resolved' ? 'Đã xử lý' : 'Đã bỏ qua') }}
+                                            </span>
+                                        </td>
+                                        <td class="px-5 py-4 text-right">
+                                            <button @click="selectedReport = report" class="text-[11px] font-semibold bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition">Chi tiết</button>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="personalReports.length === 0">
+                                        <td colspan="6" class="text-center py-8 text-[11px] text-gray-400 italic">Không có báo cáo nào khớp với tìm kiếm của bạn.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Tab 2: Tổ chức từ thiện -->
+                    <div v-if="activeReportTab === 'charity'" class="border border-gray-100 rounded-xl overflow-hidden shadow-sm animate-fade-in">
+                        <div class="bg-gray-50/80 px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+                            <div>
+                                <h3 class="text-sm font-bold text-gray-800">Báo cáo về Tổ chức từ thiện</h3>
+                                <p class="text-[10px] text-gray-500 mt-0.5">Các vi phạm nghiêm trọng liên quan đến chiến dịch quyên góp, trục lợi hoặc sai mục đích.</p>
+                            </div>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-sm">
+                                <thead class="bg-white text-gray-400 text-[10px] font-bold uppercase tracking-wider border-b border-gray-50">
+                                    <tr>
+                                        <th class="px-5 py-3">Thời gian</th>
+                                        <th class="px-5 py-3">Người báo cáo</th>
+                                        <th class="px-5 py-3 text-blue-700">Tổ chức bị báo cáo</th>
+                                        <th class="px-5 py-3">Lý do & Chi tiết</th>
+                                        <th class="px-5 py-3">Trạng thái</th>
+                                        <th class="px-5 py-3 text-right">Hành động</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-gray-50 bg-white">
+                                    <tr v-for="report in charityReports" :key="report.id" class="hover:bg-gray-50/50 transition">
+                                        <td class="px-5 py-4 text-[11px] font-medium text-gray-500 whitespace-nowrap">
+                                            {{ new Date(report.created_at).toLocaleString('vi-VN', {hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'numeric'}) }}
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <div class="text-[11px] text-gray-700 font-semibold" v-if="report.reporter">{{ report.reporter.name }}</div>
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <div class="text-[11px] text-blue-700 font-bold" v-if="report.reported_user">{{ report.reported_user.name }}</div>
+                                        </td>
+                                        <td class="px-5 py-4 text-gray-700 leading-relaxed text-[11px] max-w-[250px]">
+                                            <span class="font-bold text-red-600 block mb-0.5">{{ report.reason }}</span>
+                                            <span class="line-clamp-2 text-gray-500" :title="report.details">{{ report.details }}</span>
+                                            <span v-if="report.campaign_id && getPendingReportCountForCampaign(report.campaign_id) >= 3 && report.status === 'pending'" class="inline-flex items-center gap-1 mt-1.5 bg-red-600 text-white text-[9px] font-bold px-2 py-0.5 rounded shadow-sm">
+                                                🔥 Ưu tiên xử lý
+                                            </span>
+                                        </td>
+                                        <td class="px-5 py-4">
+                                            <span :class="{
+                                                'bg-amber-50 text-amber-700 border-amber-100': report.status === 'pending',
+                                                'bg-emerald-50 text-emerald-700 border-emerald-100': report.status === 'resolved',
+                                                'bg-gray-50 text-gray-700 border-gray-100': report.status === 'dismissed',
+                                            }" class="text-[9px] font-bold px-2 py-0.5 rounded border whitespace-nowrap">
+                                                {{ report.status === 'pending' ? 'Chờ xử lý' : (report.status === 'resolved' ? 'Đã xử lý' : 'Đã bỏ qua') }}
+                                            </span>
+                                        </td>
+                                        <td class="px-5 py-4 text-right">
+                                            <button @click="selectedReport = report" class="text-[11px] font-semibold bg-gray-50 hover:bg-gray-100 border border-gray-200 text-gray-700 px-3 py-1.5 rounded-lg transition">Chi tiết</button>
+                                        </td>
+                                    </tr>
+                                    <tr v-if="charityReports.length === 0">
+                                        <td colspan="6" class="text-center py-8 text-[11px] text-gray-400 italic">Không có báo cáo nào khớp với tìm kiếm của bạn.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -951,6 +1250,16 @@ const resolveReport = (reportId, action) => {
                             <div>
                                 <p class="font-bold text-blue-900 text-sm">{{ selectedReport.food_post.title }}</p>
                                 <p class="text-xs text-blue-700 mt-0.5">Tạo ngày: {{ new Date(selectedReport.food_post.created_at).toLocaleDateString('vi-VN') }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div v-else-if="selectedReport.campaign" class="space-y-2">
+                        <span class="text-sm font-bold text-gray-900">Chiến dịch liên quan:</span>
+                        <div class="bg-amber-50 p-3 rounded-xl border border-amber-100 flex items-start gap-3">
+                            <div class="w-12 h-12 rounded-lg bg-amber-200 flex items-center justify-center text-xl font-bold text-amber-700 shrink-0">CD</div>
+                            <div>
+                                <p class="font-bold text-amber-900 text-sm">{{ selectedReport.campaign.title }}</p>
+                                <p class="text-xs text-amber-700 mt-0.5">Tạo ngày: {{ new Date(selectedReport.campaign.created_at).toLocaleDateString('vi-VN') }}</p>
                             </div>
                         </div>
                     </div>
