@@ -206,7 +206,7 @@ Route::middleware(['auth', 'verified', 'role:charity'])->group(function () {
             return redirect()->route('charity.pending');
         }
         $campaigns = \App\Models\Campaign::where('user_id', auth()->id())
-            ->with('items')
+            ->with(['items', 'donations.user', 'donations.campaignItem'])
             ->latest()
             ->get();
             

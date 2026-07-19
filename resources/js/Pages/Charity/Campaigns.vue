@@ -111,6 +111,14 @@ const submitRejectDonation = () => {
         });
     }
 };
+
+const showCampaignDetailsModal = ref(false);
+const selectedCampaignForDetails = ref(null);
+
+const openCampaignDetailsModal = (campaign) => {
+    selectedCampaignForDetails.value = campaign;
+    showCampaignDetailsModal.value = true;
+};
 </script>
 
 <template>
@@ -337,6 +345,10 @@ const submitRejectDonation = () => {
 
               <!-- Nút hành động -->
               <div class="pt-4 mt-auto border-t border-gray-50 flex flex-wrap gap-2 justify-end">
+                  <button @click="openCampaignDetailsModal(campaign)" class="text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
+                      ℹ️ Xem chi tiết
+                  </button>
+
                   <a v-if="campaign.status === 'closed' || campaign.status === 'completed'" :href="route('charity.campaigns.export', campaign.id)" target="_blank" class="text-xs font-semibold text-blue-600 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1">
                       📄 Báo cáo
                   </a>
@@ -386,6 +398,81 @@ const submitRejectDonation = () => {
                   <svg v-if="isProcessing" class="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                   <span>{{ isProcessing ? 'Đang xử lý...' : 'Xác nhận' }}</span>
                 </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL CHI TIẾT CHIẾN DỊCH -->
+    <div 
+      v-if="showCampaignDetailsModal && selectedCampaignForDetails" 
+      class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200"
+    >
+        <div class="bg-white rounded-3xl w-full max-w-4xl max-h-[90vh] flex flex-col shadow-2xl border border-gray-100 text-left overflow-hidden">
+            <div class="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+                <h3 class="text-xl font-extrabold text-emerald-800">Chi tiết Quyên góp: {{ selectedCampaignForDetails.title }}</h3>
+                <button @click="showCampaignDetailsModal = false" class="text-gray-400 hover:text-gray-600 transition">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto custom-scrollbar flex-1 bg-white">
+                <div v-if="!selectedCampaignForDetails.donations || selectedCampaignForDetails.donations.length === 0" class="text-center py-10 text-gray-500 italic">
+                    Chưa có giao dịch quyên góp nào cho chiến dịch này.
+                </div>
+                <div v-else class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-emerald-50">
+                            <tr>
+                                <th scope="col" class="px-4 py-3 text-left text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Mã Quyên Góp</th>
+                                <th scope="col" class="px-4 py-3 text-left text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Nhà Hảo Tâm</th>
+                                <th scope="col" class="px-4 py-3 text-left text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Vật Phẩm</th>
+                                <th scope="col" class="px-4 py-3 text-center text-[11px] font-bold text-emerald-800 uppercase tracking-wider">SL</th>
+                                <th scope="col" class="px-4 py-3 text-left text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Vận Chuyển</th>
+                                <th scope="col" class="px-4 py-3 text-left text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Trạng Thái</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-100">
+                            <tr v-for="donation in selectedCampaignForDetails.donations" :key="donation.id" class="hover:bg-gray-50 transition">
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    <span class="px-2 py-1 bg-gray-100 text-gray-700 text-[11px] font-mono rounded">{{ donation.donation_code }}</span>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="text-sm font-semibold text-gray-900">{{ donation.user?.name || 'Ẩn danh' }}</div>
+                                    <div class="text-[11px] text-gray-500">{{ donation.user?.phone || '' }}</div>
+                                </td>
+                                <td class="px-4 py-3">
+                                    <div class="text-sm text-gray-800 font-medium max-w-[200px] truncate" :title="donation.campaign_item?.item_name">
+                                        {{ donation.campaign_item?.item_name || 'Vật phẩm không xác định' }}
+                                    </div>
+                                    <div v-if="donation.food_description" class="text-[10px] text-gray-500 italic truncate max-w-[200px]" :title="donation.food_description">
+                                        "{{ donation.food_description }}"
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap text-center text-sm font-bold text-emerald-600">
+                                    {{ donation.donation_quantity }}
+                                </td>
+                                <td class="px-4 py-3 text-sm">
+                                    <div v-if="donation.shipping_method === 'self_delivery'" class="text-blue-700 text-xs font-semibold flex items-center gap-1">
+                                        🚶 Tự mang tới
+                                    </div>
+                                    <div v-else-if="donation.shipping_method === 'delivery_service'" class="text-orange-700 text-xs">
+                                        <div class="font-semibold flex items-center gap-1 mb-1">🚚 Giao hàng qua Shipper</div>
+                                        <div class="text-[10px] leading-tight">
+                                            TX: <span class="font-bold">{{ donation.shipper_name || 'Chưa cập nhật' }}</span><br>
+                                            BS: <span class="font-bold">{{ donation.shipper_license_plate || '---' }}</span>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-3 whitespace-nowrap">
+                                    <span v-if="donation.status === 'completed'" class="px-2 py-1 text-[10px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">Hoàn thành</span>
+                                    <span v-else-if="donation.status === 'pending'" class="px-2 py-1 text-[10px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-200">Đang chờ</span>
+                                    <span v-else-if="donation.status === 'cancelled'" class="px-2 py-1 text-[10px] font-bold rounded-full bg-red-100 text-red-800 border border-red-200">Đã hủy</span>
+                                    <span v-else class="px-2 py-1 text-[10px] font-bold rounded-full bg-gray-100 text-gray-800 border border-gray-200">{{ donation.status }}</span>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>

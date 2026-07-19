@@ -24,4 +24,9 @@ class Campaign extends Model
     {
         return $this->hasMany(CampaignItem::class, 'campaign_id', 'id');
     }
+
+    public function donations()
+    {
+        return $this->hasMany(CampaignDonation::class, 'campaign_id', 'id');
+    }
 }
